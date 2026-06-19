@@ -1,0 +1,14 @@
+# Không đưa vào image Docker:
+node_modules
+npm-debug.log*
+
+# Bí mật — tuyệt đối không build vào image
+.env
+.env.*
+!.env.example
+
+# Git & file phát triển
+.git
+.gitignore
+*.log
+*.tmp

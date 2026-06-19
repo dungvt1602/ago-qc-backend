@@ -1,0 +1,190 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page { size: A4 portrait; margin: 11mm 11mm 10mm 11mm; }
+    body { font-family: Arial, 'Times New Roman', sans-serif; color:#111; font-size:10px; margin:0; }
+    .page { page-break-after: always; min-height: 275mm; position: relative; }
+    .page:last-child { page-break-after: auto; }
+    .header { display:flex; align-items:flex-start; justify-content:space-between; border-bottom:2px solid #3f7f25; padding-bottom:6px; margin-bottom:10px; }
+    .logo { font-size:28px; font-weight:800; color:#3f7f25; letter-spacing:-1px; }
+    .company { text-align:right; font-size:10px; line-height:1.3; }
+    .company .name { color:#3f7f25; font-weight:700; font-size:12px; }
+    .title { text-align:center; margin:12px 0 12px; }
+    .title h1 { color:#3f7f25; margin:0; font-size:20px; letter-spacing:.2px; }
+    .title h2 { color:#3f7f25; font-style:italic; margin:2px 0 0; font-size:14px; font-weight:500; }
+    table { border-collapse: collapse; width:100%; table-layout:fixed; }
+    th, td { border:1px solid #5d8d3e; padding:5px; vertical-align:middle; }
+    .section { background:#3f7f25; color:#fff; font-weight:700; text-transform:uppercase; text-align:left; }
+    .label { background:#e9f1e3; font-weight:700; width:17%; }
+    .value { min-height:18px; }
+    .center { text-align:center; }
+    .sign-row td { border:0; text-align:center; padding-top:18px; color:#3f7f25; font-weight:700; }
+    .sign-note { color:#777; font-style:italic; font-weight:400; margin-top:4px; }
+    .qc-head td { height:22px; }
+    .photo-grid td { width:33.33%; padding:0; vertical-align:top; }
+    .box-title { color:#3f7f25; font-weight:700; text-align:center; min-height:28px; padding:6px 5px; border-bottom:1px solid #5d8d3e; text-transform:uppercase; }
+    .photo-desc { text-align:center; padding:8px 8px 4px; min-height:34px; }
+    .photo-wrap { height:115px; display:flex; align-items:center; justify-content:center; padding:4px; }
+    .photo-wrap img { max-width:100%; max-height:112px; object-fit:contain; }
+    .placeholder { color:#999; font-style:italic; }
+    .field-line { border-top:1px solid #5d8d3e; padding:5px 6px; min-height:18px; }
+    .footer { position:absolute; left:0; right:0; bottom:0; border-top:1px solid #3f7f25; padding-top:4px; color:#777; font-style:italic; display:flex; justify-content:space-between; font-size:9px; }
+    .note { font-size:9px; color:#666; font-style:italic; margin-top:5px; line-height:1.35; }
+    .republic { text-align:center; font-weight:700; font-size:14px; line-height:1.25; margin-top:2px; }
+    .republic .en { font-style:italic; font-size:10px; font-weight:500; }
+  </style>
+</head>
+<body>
+<%
+  const f = d.qcFile;
+  const s = d.summary || {};
+  const set = d.settings || {};
+  let page = 0;
+
+  function ph(x) { return (x === null || x === undefined) ? '' : String(x); }
+
+  function header() {
+    return `<div class="header">
+      <div class="logo">ago<span style="color:#5a9d35">fruit</span></div>
+      <div class="company">
+        <div class="name">${ph(set.COMPANY_NAME || 'AGO IMPORT EXPORT CO., LTD')}</div>
+        <div>Add: ${ph(set.ADDRESS || '50 Street No 5, Linh Xuan Ward, Ho Chi Minh City')}</div>
+        <div><i>Website: ${ph(set.WEBSITE || 'agoexim.com')} &nbsp; | &nbsp; Email: ${ph(set.EMAIL || 'info@agoexim.com')}</i></div>
+      </div>
+    </div>`;
+  }
+
+  function footer() {
+    page++;
+    return `<div class="footer">
+      <div>AGO Fruit | Hồ sơ QC lô hàng / Lot QC File | Nội bộ / Internal</div>
+      <div>Trang/Page ${page}/${d.totalPages}</div>
+    </div>`;
+  }
+
+  function photoCell(item, isContainer) {
+    const desc = isContainer
+      ? `${ph(item.DESCRIPTION_VI)} / ${ph(item.DESCRIPTION_EN)}`
+      : ph(item.photoLabel || '');
+    const img = item.PHOTO_RENDER_URL
+      ? `<img src="${item.PHOTO_RENDER_URL}" alt="QC photo">`
+      : `<div class="placeholder">[chèn hình ảnh tại đây / insert photo here]</div>`;
+    return `<td>
+      <div class="box-title">${ph(item.ITEM_NAME_VI)} / ${ph(item.ITEM_NAME_EN)}</div>
+      <div class="photo-desc">${desc}</div>
+      <div class="photo-wrap">${img}</div>
+      <div class="field-line"><b>Tỉ lệ đạt / Pass rate:</b> ${ph(item.PASS_RATE)}</div>
+      <div class="field-line"><b>Tỉ lệ không đạt / Fail rate:</b> ${ph(item.FAIL_RATE)}</div>
+      <div class="field-line"><b>Nhận xét / Remarks:</b> ${ph(item.REMARKS)}</div>
+    </td>`;
+  }
+%>
+
+<!-- Trang 1: thông tin lô hàng + thống kê + xuất hàng -->
+<div class="page">
+  <%- header() %>
+  <div class="republic">
+    CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM<br>
+    <span class="en">SOCIALIST REPUBLIC OF VIETNAM</span><br>
+    Độc lập - Tự do - Hạnh phúc<br>
+    <span class="en">Independence - Freedom - Happiness</span>
+  </div>
+  <div class="title">
+    <h1>BỘ THÔNG TIN VÀ HÌNH ẢNH QC LÔ HÀNG</h1>
+    <h2>LOT QC INFORMATION AND PHOTO RECORD</h2>
+  </div>
+  <table>
+    <tr><th class="section" colspan="4">A. THÔNG TIN LÔ HÀNG / LOT INFORMATION</th></tr>
+    <tr><td class="label">Mã hồ sơ QC / QC file no.</td><td class="value"><%= ph(f.QC_FILE_NO) %></td><td class="label">Mã lô / Lot code</td><td><%= ph(f.LOT_CODE) %></td></tr>
+    <tr><td class="label">Hợp đồng số / Contract no.</td><td><%= ph(f.CONTRACT_NO) %></td><td class="label">PO số / PO no.</td><td><%= ph(f.PO_NO) %></td></tr>
+    <tr><td class="label">Lệnh sản xuất / Production order</td><td><%= ph(f.PRODUCTION_ORDER) %></td><td class="label">Phụ lục tiêu chuẩn / Standard appendix</td><td><%= ph(f.STANDARD_APPENDIX) %></td></tr>
+    <tr><td class="label">Tên sản phẩm / Product name</td><td><%= ph(f.PRODUCT_NAME) %></td><td class="label">Quy cách/Size/Grade / Specification</td><td><%= ph(f.SPECIFICATION) %></td></tr>
+    <tr><td class="label">Nhà cung cấp / Supplier</td><td><%= ph(f.SUPPLIER) %></td><td class="label">Mã NCC / Supplier code</td><td><%= ph(f.SUPPLIER_CODE) %></td></tr>
+    <tr><td class="label">Số lượng theo PO / PO quantity</td><td><%= ph(f.PO_QUANTITY) %></td><td class="label">Đơn vị tính / Unit</td><td><%= ph(f.UNIT) %></td></tr>
+    <tr><td class="label">Ngày bắt đầu / Start date</td><td><%= ph(f.START_DATE) %></td><td class="label">Dự kiến kết thúc / Est. finish date</td><td><%= ph(f.EST_FINISH_DATE) %></td></tr>
+    <tr><td class="label">Tổng số ngày SX / Total production days</td><td><%= ph(f.TOTAL_PRODUCTION_DAYS) %> ngày/days</td><td class="label">Tổng số kho/cơ sở / Total warehouses/facilities</td><td><%= ph(f.TOTAL_WAREHOUSES) %> kho/warehouse</td></tr>
+  </table>
+  <br>
+  <table>
+    <tr><th class="section" colspan="4">B. THỐNG KÊ / SUMMARY</th></tr>
+    <tr><td class="label">Số lượng đã sản xuất / Produced qty</td><td><%= ph(s.PRODUCED_QTY) %></td><td class="label">Số lượng chờ sản xuất / Pending production qty</td><td><%= ph(s.PENDING_PRODUCTION_QTY) %></td></tr>
+    <tr><td class="label">Tổng thành phẩm đạt / Total passed finished goods</td><td><%= ph(s.TOTAL_PASSED_FINISHED_GOODS) %></td><td class="label">Tỷ lệ đạt lũy kế / Cumulative pass rate</td><td><%= ph(s.CUMULATIVE_PASS_RATE) %></td></tr>
+    <tr><td class="label">Tổng không đạt/chờ xử lý / Total failed/pending</td><td><%= ph(s.TOTAL_FAILED_PENDING) %></td><td class="label">Tỷ lệ không đạt lũy kế / Cumulative fail rate</td><td><%= ph(s.CUMULATIVE_FAIL_RATE) %></td></tr>
+    <tr><td class="label">Tổng đã giao / Total delivered</td><td><%= ph(s.TOTAL_DELIVERED) %></td><td class="label">Tổng tồn kho / Total stock on hand</td><td><%= ph(s.TOTAL_STOCK_ON_HAND) %></td></tr>
+    <tr><td class="label">Chênh lệch cần xử lý / Difference to resolve</td><td><%= ph(s.DIFFERENCE_TO_RESOLVE) %></td><td class="label">Hướng xử lý / Handling action</td><td><%= ph(s.HANDLING_ACTION) %></td></tr>
+  </table>
+  <br>
+  <table>
+    <tr><th class="section" colspan="4">C. THÔNG TIN XUẤT HÀNG / SHIPMENT INFORMATION</th></tr>
+    <tr><td class="label">Số container / Container no.</td><td><%= ph(f.CONTAINER_NO) %></td><td class="label">Số seal / Seal no.</td><td><%= ph(f.SEAL_NO) %></td></tr>
+    <tr><td class="label">Ngày đóng cont / Container loading date</td><td><%= ph(f.CONTAINER_LOADING_DATE) %></td><td class="label">Nhân viên QC / QC staff</td><td><%= ph(f.QC_STAFF) %></td></tr>
+  </table>
+  <table class="sign-row">
+    <tr>
+      <td>NGƯỜI LẬP HỒ SƠ / PREPARED BY<div class="sign-note">(Ký, ghi rõ họ tên) / Signature &amp; full name</div></td>
+      <td>QC MANAGER<div class="sign-note">(Ký, ghi rõ họ tên) / Signature &amp; full name</div></td>
+      <td>ĐIỀU PHỐI/MUA HÀNG / COORDINATION/PURCHASING<div class="sign-note">(Ký, ghi rõ họ tên) / Signature &amp; full name</div></td>
+    </tr>
+  </table>
+  <%- footer() %>
+</div>
+
+<!-- Các trang QC hàng ngày: mỗi phiên QC một trang -->
+<% d.dailySessions.forEach(function (sess) { %>
+<div class="page">
+  <%- header() %>
+  <div class="title"><h1>BÁO CÁO QUÁ TRÌNH QC HÀNG HOÁ</h1><h2>DAILY QC PROCESS REPORT</h2></div>
+  <table class="qc-head">
+    <tr><td class="label">Ngày QC / QC date</td><td><%= ph(sess.QC_DATE) %></td><td class="label">Kho/Cơ sở / Warehouse/Facility</td><td><%= ph(sess.WAREHOUSE) %></td></tr>
+    <tr><td class="label">Mã lô / Lot code</td><td><%= ph(sess.LOT_CODE) %></td><td class="label">Nhân viên QC / QC staff</td><td><%= ph(sess.QC_STAFF) %></td></tr>
+  </table>
+  <br>
+  <table class="photo-grid">
+    <tr>
+      <%- photoCell(sess.items[0], false) %>
+      <%- photoCell(sess.items[1], false) %>
+      <%- photoCell(sess.items[2], false) %>
+    </tr>
+    <tr>
+      <%- photoCell(sess.items[3], false) %>
+      <%- photoCell(sess.items[4], false) %>
+      <%- photoCell(sess.items[5], false) %>
+    </tr>
+  </table>
+  <div class="note">
+    Ảnh phải rõ mã lô/kho/ngày hoặc có bảng nhận diện đi kèm. Không chỉnh sửa làm thay đổi bản chất tình trạng hàng hóa.<br>
+    Quy ước mã ảnh đề xuất: [Mã lô]_[Ngày]_[Kho]_STT Ví dụ: LOT01_180626_KHOA_01.<br>
+    Photos must clearly show lot code/warehouse/date or include an ID board. Do not edit photos in a way that changes the actual condition of goods.<br>
+    Suggested photo code: [Lot]_[Date]_[Warehouse]_No. Example: LOT01_180626_KHOA_01.
+  </div>
+  <%- footer() %>
+</div>
+<% }) %>
+
+<!-- Các trang ảnh container: mỗi 9 ảnh một trang (lưới 3x3) -->
+<% d.containerChunks.forEach(function (group, ci) { %>
+<div class="page">
+  <%- header() %>
+  <div class="title"><h1>HÌNH ẢNH GIAO HÀNG - CONTAINER</h1><h2>DELIVERY - CONTAINER PHOTOS</h2></div>
+  <table class="photo-grid">
+    <% for (let r = 0; r < 3; r++) { %>
+      <tr>
+        <% for (let c = 0; c < 3; c++) { const idx = r * 3 + c; %>
+          <% if (group[idx]) { %><%- photoCell(group[idx], true) %><% } else { %><td>&nbsp;</td><% } %>
+        <% } %>
+      </tr>
+    <% } %>
+  </table>
+  <% if (ci === d.containerChunks.length - 1) { %>
+    <div class="note" style="margin-top:14px;">
+      Tài liệu này là bộ hồ sơ QC của một lô hàng. Các trang Phiếu QC hàng ngày và Hình ảnh QC hàng ngày được nhân bản theo số ngày và số kho/cơ sở thực tế.<br>
+      This document is the QC record for one lot. Daily QC and photo pages may be duplicated according to actual production days and warehouses/facilities.
+    </div>
+  <% } %>
+  <%- footer() %>
+</div>
+<% }) %>
+</body>
+</html>
