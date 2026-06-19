@@ -21,9 +21,18 @@ export function sanitizeCode(s) {
   return String(s || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '') || 'NOPO';
 }
 
-// Làm sạch tên file (bỏ ký tự không hợp lệ)
+// Làm sạch tên file / khóa Storage.
+// Supabase Storage KHÔNG nhận ký tự có dấu (tiếng Việt) hay ký tự lạ -> báo "Invalid key".
+// Vì vậy: bỏ dấu, đổi đ/Đ, rồi chỉ giữ A-Z a-z 0-9 . _ -
 export function sanitizeFileName(s) {
-  return String(s || 'file').replace(/[\\/:*?"<>|]/g, '-').slice(0, 160);
+  const ascii = String(s || 'file')
+    .normalize('NFD').replace(/\p{M}/gu, '') // tách và bỏ dấu (Ả->A, Ợ->O...)
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D');
+  return ascii
+    .replace(/[^A-Za-z0-9._-]+/g, '-') // mọi ký tự còn lại không an toàn -> gạch ngang
+    .replace(/-+/g, '-')
+    .replace(/^[-.]+|[-.]+$/g, '')
+    .slice(0, 160) || 'file';
 }
 
 // Cắt mảng thành từng nhóm kích thước size
