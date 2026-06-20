@@ -5,6 +5,8 @@ import * as containerRepo from '../repositories/container.repo.js';
 import { DAILY_ITEMS, CONTAINER_ITEMS } from '../data/catalog.js';
 import { upperKeys } from '../lib/rows.js';
 import { todayStr, dateCompact, sanitizeCode } from '../lib/util.js';
+import { removeFiles } from '../lib/storage.js';
+import { config } from '../config/env.js';
 
 // Trả về danh mục cố định (frontend hiện chưa dùng, giữ cho đủ "hợp đồng" cũ).
 export function setupInfo() {
@@ -139,4 +141,18 @@ export async function updateSummary(p) {
   for (const [camel, col] of Object.entries(SUMMARY_MAP)) updates[col] = p[camel] || '';
   await repo.upsertSummary(p.qcFileId, updates);
   return getQCFile(p.qcFileId);
+}
+
+// Xóa cả hồ sơ QC: gỡ ảnh khỏi Storage trước, rồi xóa bản ghi (CASCADE xóa con).
+export async function deleteQCFile(qcFileId) {
+  const file = await repo.findById(qcFileId);
+  if (!file) throw new Error('Không tìm thấy hồ sơ QC');
+  const [items, containers] = await Promise.all([
+    dailyRepo.findItems(qcFileId),
+    containerRepo.findByFile(qcFileId),
+  ]);
+  const paths = [...items, ...containers].map((x) => x.photo_path).filter(Boolean);
+  try { await removeFiles(config.photoBucket, paths); } catch (e) { /* lỗi xóa ảnh không chặn việc xóa hồ sơ */ }
+  await repo.remove(qcFileId);
+  return { deleted: true, id: qcFileId };
 }

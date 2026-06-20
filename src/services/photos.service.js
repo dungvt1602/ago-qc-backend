@@ -2,7 +2,7 @@
 import * as qcFilesRepo from '../repositories/qcFiles.repo.js';
 import * as dailyRepo from '../repositories/daily.repo.js';
 import * as containerRepo from '../repositories/container.repo.js';
-import { uploadDataUrl } from '../lib/storage.js';
+import { uploadDataUrl, removeFiles } from '../lib/storage.js';
 import { config } from '../config/env.js';
 import { CONTAINER_ITEMS } from '../data/catalog.js';
 import { sanitizeFileName, nowStr } from '../lib/util.js';
@@ -29,4 +29,27 @@ export async function uploadPhoto(p) {
     throw new Error('Sai targetType: ' + p.targetType);
   }
   return getQCFile(p.qcFileId);
+}
+
+// Xóa ảnh của 1 mục: gỡ file khỏi Storage rồi xóa link trong DB.
+export async function deletePhoto(p) {
+  if (p.targetType === 'daily') {
+    const item = await dailyRepo.findItem(p.dailyQcId, p.itemCode);
+    if (item && item.photo_path) {
+      try { await removeFiles(config.photoBucket, [item.photo_path]); } catch (e) { /* bỏ qua */ }
+    }
+    await dailyRepo.clearItemPhoto(p.dailyQcId, p.itemCode);
+    const session = await dailyRepo.findSessionById(p.dailyQcId);
+    if (!session) throw new Error('Không tìm thấy phiên QC');
+    return getQCFile(session.qc_file_id);
+  }
+  if (p.targetType === 'container') {
+    const row = await containerRepo.findOne(p.qcFileId, Number(p.photoNo));
+    if (row && row.photo_path) {
+      try { await removeFiles(config.photoBucket, [row.photo_path]); } catch (e) { /* bỏ qua */ }
+    }
+    await containerRepo.clearPhoto(p.qcFileId, Number(p.photoNo));
+    return getQCFile(p.qcFileId);
+  }
+  throw new Error('Sai targetType: ' + p.targetType);
 }

@@ -105,3 +105,8 @@ export async function updateCounts(id) {
     [id]
   );
 }
+
+// Xóa hồ sơ QC (CASCADE tự xóa summary / daily / items / container).
+export function remove(id) {
+  return query('DELETE FROM qc_files WHERE id = $1', [id]);
+}

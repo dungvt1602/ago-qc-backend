@@ -5,6 +5,8 @@ import * as qcFilesRepo from '../repositories/qcFiles.repo.js';
 import { DAILY_ITEMS } from '../data/catalog.js';
 import { todayStr } from '../lib/util.js';
 import { getQCFile } from './qcFiles.service.js';
+import { removeFiles } from '../lib/storage.js';
+import { config } from '../config/env.js';
 
 export async function addDailyQC(p) {
   const file = await qcFilesRepo.findById(p.qcFileId);
@@ -38,5 +40,29 @@ export async function saveDailyQCItem(p) {
     fail_rate: p.failRate || '',
     remarks: p.remarks || '',
   });
+  return getQCFile(session.qc_file_id);
+}
+
+// Sửa thông tin phiên QC (ngày / kho / nhân viên), rồi tính lại số ngày/kho.
+export async function updateDailyQC(p) {
+  const session = await dailyRepo.findSessionById(p.dailyQcId);
+  if (!session) throw new Error('Không tìm thấy phiên QC');
+  await dailyRepo.updateSession(p.dailyQcId, {
+    qc_date: p.qcDate || '',
+    warehouse: p.warehouse || '',
+    qc_staff: p.qcStaff || '',
+  });
+  await qcFilesRepo.updateCounts(session.qc_file_id);
+  return getQCFile(session.qc_file_id);
+}
+
+// Xóa phiên QC: gỡ ảnh của phiên khỏi Storage, xóa phiên (CASCADE xóa hạng mục), tính lại số ngày/kho.
+export async function deleteDailyQC(p) {
+  const session = await dailyRepo.findSessionById(p.dailyQcId);
+  if (!session) throw new Error('Không tìm thấy phiên QC');
+  const paths = (await dailyRepo.findPhotoPathsBySession(p.dailyQcId)).map((x) => x.photo_path).filter(Boolean);
+  try { await removeFiles(config.photoBucket, paths); } catch (e) { /* bỏ qua lỗi xóa ảnh */ }
+  await dailyRepo.removeSession(p.dailyQcId);
+  await qcFilesRepo.updateCounts(session.qc_file_id);
   return getQCFile(session.qc_file_id);
 }

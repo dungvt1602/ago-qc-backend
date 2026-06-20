@@ -38,3 +38,11 @@ export async function downloadAsDataUrl(bucket, path) {
   const mime = data.type || 'image/jpeg';
   return `data:${mime};base64,${buffer.toString('base64')}`;
 }
+
+// Xóa một hoặc nhiều file khỏi Storage (dùng khi xóa ảnh / xóa hồ sơ).
+export async function removeFiles(bucket, paths) {
+  const list = (paths || []).filter(Boolean);
+  if (!list.length) return;
+  const { error } = await supabase.storage.from(bucket).remove(list);
+  if (error) throw new Error('Xóa file Storage thất bại: ' + error.message);
+}

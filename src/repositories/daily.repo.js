@@ -81,3 +81,42 @@ export async function updateItemPhoto(dailyQcId, itemCode, photo) {
     [dailyQcId, itemCode, photo.url, photo.path, photo.capturedAt]
   );
 }
+
+// Lấy đường dẫn ảnh của một phiên (để xóa khỏi Storage).
+export function findPhotoPathsBySession(sessionId) {
+  return query(
+    "SELECT photo_path FROM daily_qc_items WHERE daily_qc_id = $1 AND coalesce(photo_path, '') <> ''",
+    [sessionId]
+  );
+}
+
+// Tìm 1 hạng mục (kèm photo_path) để biết ảnh cần xóa.
+export function findItem(dailyQcId, itemCode) {
+  return queryOne(
+    'SELECT id, photo_path FROM daily_qc_items WHERE daily_qc_id = $1 AND item_code = $2',
+    [dailyQcId, itemCode]
+  );
+}
+
+// Gỡ ảnh khỏi 1 hạng mục.
+export function clearItemPhoto(dailyQcId, itemCode) {
+  return query(
+    `UPDATE daily_qc_items SET photo_url = NULL, photo_path = NULL, captured_at = NULL, updated_at = now()
+     WHERE daily_qc_id = $1 AND item_code = $2`,
+    [dailyQcId, itemCode]
+  );
+}
+
+// Sửa thông tin phiên QC (ngày / kho / nhân viên).
+export function updateSession(id, fields) {
+  return query(
+    `UPDATE daily_qc SET qc_date = NULLIF($2,'')::date, warehouse = $3, qc_staff = $4, updated_at = now()
+     WHERE id = $1`,
+    [id, fields.qc_date, fields.warehouse, fields.qc_staff]
+  );
+}
+
+// Xóa phiên QC (CASCADE tự xóa các hạng mục của phiên).
+export function removeSession(id) {
+  return query('DELETE FROM daily_qc WHERE id = $1', [id]);
+}

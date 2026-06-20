@@ -1,5 +1,5 @@
 // Tầng truy vấn SQL cho bảng container_photos (21 ảnh giao hàng).
-import { query } from '../lib/db.js';
+import { query, queryOne } from '../lib/db.js';
 
 export function findByFile(qcFileId) {
   return query(
@@ -39,5 +39,22 @@ export async function upsertPhoto(qcFileId, def, photo) {
        captured_at = EXCLUDED.captured_at, updated_at = now()`,
     [qcFileId, def.no, def.code, def.vi, def.en, def.descVi, def.descEn,
       photo.url, photo.path, photo.capturedAt]
+  );
+}
+
+// Tìm 1 ảnh container (kèm photo_path) để biết ảnh cần xóa.
+export function findOne(qcFileId, photoNo) {
+  return queryOne(
+    'SELECT id, photo_path FROM container_photos WHERE qc_file_id = $1 AND photo_no = $2',
+    [qcFileId, photoNo]
+  );
+}
+
+// Gỡ ảnh khỏi 1 mục container.
+export function clearPhoto(qcFileId, photoNo) {
+  return query(
+    `UPDATE container_photos SET photo_url = NULL, photo_path = NULL, captured_at = NULL, updated_at = now()
+     WHERE qc_file_id = $1 AND photo_no = $2`,
+    [qcFileId, photoNo]
   );
 }

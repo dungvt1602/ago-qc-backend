@@ -23,6 +23,10 @@ const handlers = {
   saveContainerItem: (p) => container.saveContainerItem(p),
   uploadPhoto: (p) => photos.uploadPhoto(p),
   exportPDF: (p) => pdf.exportPDF(p.qcFileId),
+  deleteQCFile: (p) => qcFiles.deleteQCFile(p.qcFileId),
+  updateDailyQC: (p) => daily.updateDailyQC(p),
+  deleteDailyQC: (p) => daily.deleteDailyQC(p),
+  deletePhoto: (p) => photos.deletePhoto(p),
 };
 
 router.post('/', async (req, res) => {
