@@ -10,7 +10,7 @@ const SELECT_FILE = `
     to_char(est_finish_date, 'YYYY-MM-DD') AS est_finish_date,
     total_production_days, total_warehouses, container_no, seal_no,
     to_char(container_loading_date, 'YYYY-MM-DD') AS container_loading_date,
-    qc_staff, status, pdf_url,
+    qc_staff, status, pdf_url, pdf_url_customer,
     to_char(created_at, 'YYYY-MM-DD HH24:MI:SS') AS created_at,
     to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') AS updated_at
   FROM qc_files`;

@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS qc_files (
   qc_staff               TEXT,
   status                 TEXT DEFAULT 'DRAFT',
   pdf_url                TEXT,
+  pdf_url_customer       TEXT,
   created_at             TIMESTAMPTZ DEFAULT now(),
   updated_at             TIMESTAMPTZ DEFAULT now()
 );

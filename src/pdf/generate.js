@@ -7,7 +7,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const TEMPLATE_PATH = path.join(__dirname, 'template.ejs');
 
 let browserPromise = null;
 
@@ -23,8 +22,8 @@ async function getBrowser() {
 
 // data: object đã chuẩn bị sẵn (qcFile, summary, settings, dailySessions, containerChunks, totalPages...).
 // Trả về Buffer PDF.
-export async function renderPdf(data) {
-  const template = await fs.readFile(TEMPLATE_PATH, 'utf8');
+export async function renderPdf(data, templateFile = 'template.ejs') {
+  const template = await fs.readFile(path.join(__dirname, templateFile), 'utf8');
   const html = ejs.render(template, { d: data });
 
   const browser = await getBrowser();

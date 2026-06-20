@@ -15,7 +15,7 @@ async function getSettings() {
   return out;
 }
 
-export async function exportPDF(qcFileId) {
+export async function exportPDF(qcFileId, variant = 'internal') {
   // Lấy dữ liệu hồ sơ và cấu hình công ty cùng lúc.
   const [data, settings] = await Promise.all([getQCFile(qcFileId), getSettings()]);
   data.settings = settings;
@@ -48,11 +48,17 @@ export async function exportPDF(qcFileId) {
   data.containerChunks = chunk(data.containerItems, 9);
   data.totalPages = 1 + data.dailySessions.length + data.containerChunks.length;
 
-  const pdfBuffer = await renderPdf(data);
+  // Chọn khuôn theo loại bản: nội bộ (đầy đủ) hoặc khách hàng (gọn).
+  const isCustomer = variant === 'customer';
+  const templateFile = isCustomer ? 'template-customer.ejs' : 'template.ejs';
+  const pdfBuffer = await renderPdf(data, templateFile);
 
   const name = sanitizeFileName(data.qcFile.LOT_CODE || data.qcFile.QC_FILE_NO || `AGO_QC_${Date.now()}`);
-  const uploaded = await uploadBuffer(config.pdfBucket, `${name}_${Date.now()}.pdf`, pdfBuffer, 'application/pdf');
+  const suffix = isCustomer ? '_KhachHang' : '_NoiBo';
+  const uploaded = await uploadBuffer(config.pdfBucket, `${name}${suffix}_${Date.now()}.pdf`, pdfBuffer, 'application/pdf');
 
-  await qcFilesRepo.update(qcFileId, { status: 'EXPORTED', pdf_url: uploaded.url });
+  // Lưu link vào cột tương ứng (nội bộ -> pdf_url, khách hàng -> pdf_url_customer).
+  const urlColumn = isCustomer ? 'pdf_url_customer' : 'pdf_url';
+  await qcFilesRepo.update(qcFileId, { status: 'EXPORTED', [urlColumn]: uploaded.url });
   return getQCFile(qcFileId);
 }
