@@ -53,12 +53,15 @@ export async function exportPDF(qcFileId, variant = 'internal') {
   const templateFile = isCustomer ? 'template-customer.ejs' : 'template.ejs';
   const pdfBuffer = await renderPdf(data, templateFile);
 
-  const name = sanitizeFileName(data.qcFile.LOT_CODE || data.qcFile.QC_FILE_NO || `AGO_QC_${Date.now()}`);
+  // Tên file CỐ ĐỊNH theo hồ sơ + loại bản -> lần xuất sau GHI ĐÈ file cũ (không tích rác).
+  const name = sanitizeFileName(data.qcFile.LOT_CODE || data.qcFile.QC_FILE_NO || 'AGO_QC');
   const suffix = isCustomer ? '_KhachHang' : '_NoiBo';
-  const uploaded = await uploadBuffer(config.pdfBucket, `${name}${suffix}_${Date.now()}.pdf`, pdfBuffer, 'application/pdf');
+  const filePath = `${qcFileId}/${name}${suffix}.pdf`;
+  const uploaded = await uploadBuffer(config.pdfBucket, filePath, pdfBuffer, 'application/pdf');
 
-  // Lưu link vào cột tương ứng (nội bộ -> pdf_url, khách hàng -> pdf_url_customer).
+  // Thêm ?t= để trình duyệt/CDN luôn lấy bản mới (file bị ghi đè nhưng URL gốc không đổi).
+  const freshUrl = `${uploaded.url}?t=${Date.now()}`;
   const urlColumn = isCustomer ? 'pdf_url_customer' : 'pdf_url';
-  await qcFilesRepo.update(qcFileId, { status: 'EXPORTED', [urlColumn]: uploaded.url });
+  await qcFilesRepo.update(qcFileId, { status: 'EXPORTED', [urlColumn]: freshUrl });
   return getQCFile(qcFileId);
 }

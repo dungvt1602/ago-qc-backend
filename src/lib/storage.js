@@ -46,3 +46,11 @@ export async function removeFiles(bucket, paths) {
   const { error } = await supabase.storage.from(bucket).remove(list);
   if (error) throw new Error('Xóa file Storage thất bại: ' + error.message);
 }
+
+// Xóa toàn bộ file trong một "thư mục" (Supabase không có folder thật, nên list rồi xóa).
+export async function removeFolder(bucket, folder) {
+  const { data, error } = await supabase.storage.from(bucket).list(folder);
+  if (error || !data || !data.length) return;
+  const paths = data.map((file) => `${folder}/${file.name}`);
+  await supabase.storage.from(bucket).remove(paths);
+}

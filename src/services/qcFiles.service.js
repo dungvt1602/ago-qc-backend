@@ -5,7 +5,7 @@ import * as containerRepo from '../repositories/container.repo.js';
 import { DAILY_ITEMS, CONTAINER_ITEMS } from '../data/catalog.js';
 import { upperKeys } from '../lib/rows.js';
 import { todayStr, dateCompact, sanitizeCode } from '../lib/util.js';
-import { removeFiles } from '../lib/storage.js';
+import { removeFiles, removeFolder } from '../lib/storage.js';
 import { config } from '../config/env.js';
 
 // Trả về danh mục cố định (frontend hiện chưa dùng, giữ cho đủ "hợp đồng" cũ).
@@ -153,6 +153,7 @@ export async function deleteQCFile(qcFileId) {
   ]);
   const paths = [...items, ...containers].map((x) => x.photo_path).filter(Boolean);
   try { await removeFiles(config.photoBucket, paths); } catch (e) { /* lỗi xóa ảnh không chặn việc xóa hồ sơ */ }
+  try { await removeFolder(config.pdfBucket, qcFileId); } catch (e) { /* dọn PDF nội bộ + khách hàng của hồ sơ */ }
   await repo.remove(qcFileId);
   return { deleted: true, id: qcFileId };
 }
