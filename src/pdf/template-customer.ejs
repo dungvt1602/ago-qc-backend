@@ -65,15 +65,11 @@
   }
 
   function photoCell(item, isContainer) {
-    const desc = isContainer
-      ? `${ph(item.DESCRIPTION_VI)} / ${ph(item.DESCRIPTION_EN)}`
-      : ph(item.photoLabel || '');
     const img = item.PHOTO_RENDER_URL
       ? `<img src="${item.PHOTO_RENDER_URL}" alt="QC photo">`
       : `<div class="placeholder">[chèn hình ảnh tại đây / insert photo here]</div>`;
     return `<td>
       <div class="box-title">${ph(item.ITEM_NAME_VI)} / ${ph(item.ITEM_NAME_EN)}</div>
-      <div class="photo-desc">${desc}</div>
       <div class="photo-wrap">${img}</div>
       <div class="field-line"><b>Tỉ lệ đạt / Pass rate:</b> ${ph(item.PASS_RATE)}</div>
       <div class="field-line"><b>Tỉ lệ không đạt / Fail rate:</b> ${ph(item.FAIL_RATE)}</div>
@@ -96,9 +92,7 @@
   </div>
   <table>
     <tr><th class="section" colspan="4">A. THÔNG TIN LÔ HÀNG / LOT INFORMATION</th></tr>
-    <tr><td class="label">Mã hồ sơ QC / QC file no.</td><td class="value"><%= ph(f.QC_FILE_NO) %></td><td class="label">Mã lô / Lot code</td><td><%= ph(f.LOT_CODE) %></td></tr>
-    <tr><td class="label">Hợp đồng số / Contract no.</td><td><%= ph(f.CONTRACT_NO) %></td><td class="label">PO số / PO no.</td><td><%= ph(f.PO_NO) %></td></tr>
-    <tr><td class="label">Lệnh sản xuất / Production order</td><td><%= ph(f.PRODUCTION_ORDER) %></td><td class="label">Phụ lục tiêu chuẩn / Standard appendix</td><td><%= ph(f.STANDARD_APPENDIX) %></td></tr>
+    <tr><td class="label">PO số / PO no.</td><td class="value"><%= ph(f.PO_NO) %></td><td class="label">Phụ lục tiêu chuẩn / Standard appendix</td><td><%= ph(f.STANDARD_APPENDIX) %></td></tr>
     <tr><td class="label">Tên sản phẩm / Product name</td><td><%= ph(f.PRODUCT_NAME) %></td><td class="label">Quy cách/Size/Grade / Specification</td><td><%= ph(f.SPECIFICATION) %></td></tr>
     <tr><td class="label">Nhà cung cấp / Supplier</td><td><%= ph(f.SUPPLIER) %></td><td class="label">Mã NCC / Supplier code</td><td><%= ph(f.SUPPLIER_CODE) %></td></tr>
     <tr><td class="label">Số lượng theo PO / PO quantity</td><td><%= ph(f.PO_QUANTITY) %></td><td class="label">Đơn vị tính / Unit</td><td><%= ph(f.UNIT) %></td></tr>

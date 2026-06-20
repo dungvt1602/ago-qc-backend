@@ -65,15 +65,11 @@
   }
 
   function photoCell(item, isContainer) {
-    const desc = isContainer
-      ? `${ph(item.DESCRIPTION_VI)} / ${ph(item.DESCRIPTION_EN)}`
-      : ph(item.photoLabel || '');
     const img = item.PHOTO_RENDER_URL
       ? `<img src="${item.PHOTO_RENDER_URL}" alt="QC photo">`
       : `<div class="placeholder">[chèn hình ảnh tại đây / insert photo here]</div>`;
     return `<td>
       <div class="box-title">${ph(item.ITEM_NAME_VI)} / ${ph(item.ITEM_NAME_EN)}</div>
-      <div class="photo-desc">${desc}</div>
       <div class="photo-wrap">${img}</div>
       <div class="field-line"><b>Tỉ lệ đạt / Pass rate:</b> ${ph(item.PASS_RATE)}</div>
       <div class="field-line"><b>Tỉ lệ không đạt / Fail rate:</b> ${ph(item.FAIL_RATE)}</div>
