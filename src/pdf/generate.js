@@ -10,6 +10,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let browserPromise = null;
 
+// Đọc logo.png một lần, chuyển thành data URL base64 để nhúng thẳng vào PDF
+// (không phụ thuộc mạng). Nếu không có file -> trả '' và template tự dùng logo chữ.
+let logoCache = null;
+async function getLogoDataUrl() {
+  if (logoCache !== null) return logoCache;
+  try {
+    const buf = await fs.readFile(path.join(__dirname, 'logo.png'));
+    logoCache = 'data:image/png;base64,' + buf.toString('base64');
+  } catch (e) {
+    logoCache = '';
+  }
+  return logoCache;
+}
+
 async function getBrowser() {
   if (!browserPromise) {
     browserPromise = puppeteer.launch({
@@ -23,6 +37,7 @@ async function getBrowser() {
 // data: object đã chuẩn bị sẵn (qcFile, summary, settings, dailySessions, containerChunks, totalPages...).
 // Trả về Buffer PDF.
 export async function renderPdf(data, templateFile = 'template.ejs') {
+  data.logoUrl = await getLogoDataUrl();
   const template = await fs.readFile(path.join(__dirname, templateFile), 'utf8');
   const html = ejs.render(template, { d: data });
 

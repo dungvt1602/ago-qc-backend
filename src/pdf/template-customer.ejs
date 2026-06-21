@@ -47,7 +47,7 @@
 
   function header() {
     return `<div class="header">
-      <div class="logo">ago<span style="color:#5a9d35">fruit</span></div>
+      ${d.logoUrl ? `<img src="${d.logoUrl}" alt="agofruit" style="height:42px">` : `<div class="logo">ago<span style="color:#5a9d35">fruit</span></div>`}
       <div class="company">
         <div class="name">${ph(set.COMPANY_NAME || 'AGO IMPORT EXPORT CO., LTD')}</div>
         <div>Add: ${ph(set.ADDRESS || '50 Street No 5, Linh Xuan Ward, Ho Chi Minh City')}</div>
