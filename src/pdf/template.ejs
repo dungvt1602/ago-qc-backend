@@ -81,10 +81,9 @@
     let out = '';
     (d.dailySessions || []).forEach(function (sess) {
       out += `<div class="page">${header()}`
-        + `<div class="title"><h1>BÁO CÁO QUÁ TRÌNH QC HÀNG HOÁ</h1><h2>DAILY QC PROCESS REPORT</h2></div>`
+        + `<div class="title"><h1>BÁO CÁO QC CHẤT LƯỢNG</h1><h2>QUALITY CHECK REPORT</h2></div>`
         + `<table class="qc-head">`
-        + `<tr><td class="label">Ngày QC / QC date</td><td>${ph(sess.QC_DATE)}</td><td class="label">Kho/Cơ sở / Warehouse/Facility</td><td>${ph(sess.WAREHOUSE)}</td></tr>`
-        + `<tr><td class="label">Mã lô / Lot code</td><td>${ph(sess.LOT_CODE)}</td><td class="label">Nhân viên QC / QC staff</td><td>${ph(sess.QC_STAFF)}</td></tr>`
+        + `<tr><td class="label">Ngày QC / QC date</td><td>${ph(sess.QC_DATE)}</td><td class="label">Mã lô / Lot code</td><td>${ph(sess.LOT_CODE)}</td></tr>`
         + `</table><br>`
         + `<table class="photo-grid">`
         + `<tr>${photoCell(sess.items[0], false)}${photoCell(sess.items[1], false)}${photoCell(sess.items[2], false)}</tr>`
