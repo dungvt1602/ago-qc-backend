@@ -2,6 +2,7 @@
 import * as repo from '../repositories/qcFiles.repo.js';
 import * as dailyRepo from '../repositories/daily.repo.js';
 import * as containerRepo from '../repositories/container.repo.js';
+import * as samplesRepo from '../repositories/samples.repo.js';
 import { DAILY_ITEMS, CONTAINER_ITEMS } from '../data/catalog.js';
 import { upperKeys } from '../lib/rows.js';
 import { todayStr, dateCompact, sanitizeCode } from '../lib/util.js';
@@ -57,31 +58,39 @@ export async function createQCFile(p) {
 // Đọc 1 hồ sơ đầy đủ. Đây là hàm trung tâm — hầu hết thao tác kết thúc bằng việc gọi nó.
 // TỐI ƯU: bắn 5 truy vấn độc lập CÙNG LÚC bằng Promise.all thay vì chờ lần lượt.
 export async function getQCFile(id) {
-  const [fileRow, summaryRow, sessionRows, itemRows, containerRows] = await Promise.all([
+  const [fileRow, summaryRow, sessionRows, itemRows, containerRows, sampleRows] = await Promise.all([
     repo.findById(id),
     repo.findSummary(id),
     dailyRepo.findSessions(id),
     dailyRepo.findItems(id),
     containerRepo.findByFile(id),
+    samplesRepo.findByFile(id),
   ]);
   if (!fileRow) throw new Error('Không tìm thấy hồ sơ QC: ' + id);
 
   const qcFile = upperKeys(fileRow);
   const summary = upperKeys(summaryRow) || { QC_FILE_ID: id };
+  const isImport = qcFile.QC_TYPE === 'IMPORT';
 
-  // Mỗi phiên QC luôn hiện đủ 6 hạng mục (lấp ô trống nếu chưa nhập).
+  // Hàng xuất: mỗi phiên đủ 6 hạng mục cố định. Hàng nhập: mỗi phiên là danh sách MẪU (4 ảnh/mẫu).
   const dailySessions = sessionRows.map((s) => {
     const session = upperKeys(s);
-    const itemsOfSession = itemRows.filter((it) => it.daily_qc_id === s.id);
-    session.items = DAILY_ITEMS.map((def) => {
-      const found = itemsOfSession.find((it) => it.item_code === def.code);
-      return found ? upperKeys(found) : emptyDailyItem(def, session);
-    });
+    if (isImport) {
+      session.items = [];
+      session.samples = sampleRows
+        .filter((r) => r.daily_qc_id === s.id)
+        .map((r) => ({ ID: r.id, SAMPLE_NO: r.sample_no, PHOTOS: Array.isArray(r.photos) ? r.photos : [] }));
+    } else {
+      const itemsOfSession = itemRows.filter((it) => it.daily_qc_id === s.id);
+      session.items = DAILY_ITEMS.map((def) => {
+        const found = itemsOfSession.find((it) => it.item_code === def.code);
+        return found ? upperKeys(found) : emptyDailyItem(def, session);
+      });
+    }
     return session;
   });
 
   // Hàng nhập kho (IMPORT): chỉ dùng ảnh container từ 13 tới cuối (13-21). Hàng xuất: đủ 21.
-  const isImport = qcFile.QC_TYPE === 'IMPORT';
   const containerDefs = isImport
     ? CONTAINER_ITEMS.filter((def) => def.no >= 13)
     : CONTAINER_ITEMS;
@@ -158,11 +167,13 @@ export async function updateSummary(p) {
 export async function deleteQCFile(qcFileId) {
   const file = await repo.findById(qcFileId);
   if (!file) throw new Error('Không tìm thấy hồ sơ QC');
-  const [items, containers] = await Promise.all([
+  const [items, containers, samples] = await Promise.all([
     dailyRepo.findItems(qcFileId),
     containerRepo.findByFile(qcFileId),
+    samplesRepo.findByFile(qcFileId),
   ]);
-  const paths = [...items, ...containers].map((x) => x.photo_path).filter(Boolean);
+  const samplePaths = samples.flatMap((s) => (s.photos || []).filter(Boolean).map((x) => x && x.path)).filter(Boolean);
+  const paths = [...items, ...containers].map((x) => x.photo_path).filter(Boolean).concat(samplePaths);
   try { await removeFiles(config.photoBucket, paths); } catch (e) { /* lỗi xóa ảnh không chặn việc xóa hồ sơ */ }
   try { await removeFolder(config.pdfBucket, qcFileId); } catch (e) { /* dọn PDF nội bộ + khách hàng của hồ sơ */ }
   await repo.remove(qcFileId);

@@ -7,6 +7,7 @@ import { todayStr } from '../lib/util.js';
 import { getQCFile } from './qcFiles.service.js';
 import { removeFiles } from '../lib/storage.js';
 import { config } from '../config/env.js';
+import * as samplesRepo from '../repositories/samples.repo.js';
 
 export async function addDailyQC(p) {
   const file = await qcFilesRepo.findById(p.qcFileId);
@@ -22,7 +23,10 @@ export async function addDailyQC(p) {
       warehouse: p.warehouse || '',
       qc_staff: p.qcStaff || file.qc_staff || '',
     });
-    await dailyRepo.insertItems(client, sessionId, p.qcFileId, DAILY_ITEMS);
+    // Hàng xuất: tạo sẵn 6 mục cố định. Hàng nhập: phiên để trống, QC tự thêm "mẫu".
+    if (file.qc_type !== 'IMPORT') {
+      await dailyRepo.insertItems(client, sessionId, p.qcFileId, DAILY_ITEMS);
+    }
   });
 
   await qcFilesRepo.updateCounts(p.qcFileId);
@@ -60,8 +64,10 @@ export async function updateDailyQC(p) {
 export async function deleteDailyQC(p) {
   const session = await dailyRepo.findSessionById(p.dailyQcId);
   if (!session) throw new Error('Không tìm thấy phiên QC');
-  const paths = (await dailyRepo.findPhotoPathsBySession(p.dailyQcId)).map((x) => x.photo_path).filter(Boolean);
-  try { await removeFiles(config.photoBucket, paths); } catch (e) { /* bỏ qua lỗi xóa ảnh */ }
+  const itemPaths = (await dailyRepo.findPhotoPathsBySession(p.dailyQcId)).map((x) => x.photo_path).filter(Boolean);
+  const samples = await samplesRepo.findByDaily(p.dailyQcId);
+  const samplePaths = samples.flatMap((s) => (s.photos || []).filter(Boolean).map((x) => x && x.path)).filter(Boolean);
+  try { await removeFiles(config.photoBucket, itemPaths.concat(samplePaths)); } catch (e) { /* bỏ qua lỗi xóa ảnh */ }
   await dailyRepo.removeSession(p.dailyQcId);
   await qcFilesRepo.updateCounts(session.qc_file_id);
   return getQCFile(session.qc_file_id);

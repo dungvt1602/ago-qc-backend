@@ -2,6 +2,7 @@
 import * as qcFilesRepo from '../repositories/qcFiles.repo.js';
 import * as dailyRepo from '../repositories/daily.repo.js';
 import * as containerRepo from '../repositories/container.repo.js';
+import * as samplesRepo from '../repositories/samples.repo.js';
 import { uploadDataUrl, removeFiles } from '../lib/storage.js';
 import { config } from '../config/env.js';
 import { CONTAINER_ITEMS } from '../data/catalog.js';
@@ -25,6 +26,15 @@ export async function uploadPhoto(p) {
     const def = CONTAINER_ITEMS.find((x) => x.no === Number(p.photoNo));
     if (!def) throw new Error('Sai số ảnh container');
     await containerRepo.upsertPhoto(p.qcFileId, def, { ...photo, capturedAt });
+  } else if (p.targetType === 'sample') {
+    // Hàng nhập: gắn ảnh vào ô (slot 1-4) của 1 mẫu.
+    const sample = await samplesRepo.findById(p.sampleId);
+    if (!sample) throw new Error('Không tìm thấy mẫu');
+    const slot = Math.max(1, Math.min(4, Number(p.slot) || 1));
+    const photos = Array.isArray(sample.photos) ? sample.photos.slice(0, 4) : [];
+    while (photos.length < 4) photos.push(null);
+    photos[slot - 1] = { url: photo.url, path: photo.path, captured_at: capturedAt };
+    await samplesRepo.updatePhotos(p.sampleId, photos);
   } else {
     throw new Error('Sai targetType: ' + p.targetType);
   }
@@ -50,6 +60,18 @@ export async function deletePhoto(p) {
     }
     await containerRepo.clearPhoto(p.qcFileId, Number(p.photoNo));
     return getQCFile(p.qcFileId);
+  }
+  if (p.targetType === 'sample') {
+    const sample = await samplesRepo.findById(p.sampleId);
+    if (!sample) throw new Error('Không tìm thấy mẫu');
+    const slot = Math.max(1, Math.min(4, Number(p.slot) || 1));
+    const photos = Array.isArray(sample.photos) ? sample.photos.slice(0, 4) : [];
+    while (photos.length < 4) photos.push(null);
+    const old = photos[slot - 1];
+    if (old && old.path) { try { await removeFiles(config.photoBucket, [old.path]); } catch (e) { /* bỏ qua */ } }
+    photos[slot - 1] = null;
+    await samplesRepo.updatePhotos(p.sampleId, photos);
+    return getQCFile(sample.qc_file_id);
   }
   throw new Error('Sai targetType: ' + p.targetType);
 }

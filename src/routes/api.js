@@ -7,6 +7,7 @@ import * as daily from '../services/daily.service.js';
 import * as container from '../services/container.service.js';
 import * as photos from '../services/photos.service.js';
 import * as pdf from '../services/pdf.service.js';
+import * as samples from '../services/samples.service.js';
 
 const router = express.Router();
 
@@ -27,6 +28,8 @@ const handlers = {
   updateDailyQC: (p) => daily.updateDailyQC(p),
   deleteDailyQC: (p) => daily.deleteDailyQC(p),
   deletePhoto: (p) => photos.deletePhoto(p),
+  addSample: (p) => samples.addSample(p),
+  deleteSample: (p) => samples.deleteSample(p),
 };
 
 router.post('/', async (req, res) => {

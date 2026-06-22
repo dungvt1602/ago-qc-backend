@@ -118,10 +118,23 @@ CREATE TABLE IF NOT EXISTS audit_log (
   created_at  TIMESTAMPTZ DEFAULT now()
 );
 
+-- Mẫu QC (chỉ dùng cho hàng nhập): mỗi phiên QC có nhiều mẫu, mỗi mẫu 4 ảnh (cột photos JSONB).
+CREATE TABLE IF NOT EXISTS qc_samples (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  daily_qc_id UUID REFERENCES daily_qc(id) ON DELETE CASCADE,
+  qc_file_id  UUID REFERENCES qc_files(id) ON DELETE CASCADE,
+  sample_no   INT,
+  photos      JSONB DEFAULT '[]'::jsonb,
+  created_at  TIMESTAMPTZ DEFAULT now(),
+  updated_at  TIMESTAMPTZ DEFAULT now()
+);
+
 -- Index tăng tốc truy vấn theo hồ sơ
 CREATE INDEX IF NOT EXISTS idx_daily_qc_file    ON daily_qc(qc_file_id);
 CREATE INDEX IF NOT EXISTS idx_daily_items_file ON daily_qc_items(qc_file_id);
 CREATE INDEX IF NOT EXISTS idx_container_file   ON container_photos(qc_file_id);
+CREATE INDEX IF NOT EXISTS idx_samples_daily    ON qc_samples(daily_qc_id);
+CREATE INDEX IF NOT EXISTS idx_samples_file      ON qc_samples(qc_file_id);
 
 -- Cấu hình ban đầu
 INSERT INTO settings (key, value, note) VALUES
