@@ -143,11 +143,8 @@
   <br>
   <table>
     <tr><th class="section" colspan="4">B. THỐNG KÊ / SUMMARY</th></tr>
-    <tr><td class="label">Số lượng đã sản xuất / Produced qty</td><td><%= ph(s.PRODUCED_QTY) %></td><td class="label">Số lượng chờ sản xuất / Pending production qty</td><td><%= ph(s.PENDING_PRODUCTION_QTY) %></td></tr>
-    <tr><td class="label">Tổng thành phẩm đạt / Total passed finished goods</td><td><%= ph(s.TOTAL_PASSED_FINISHED_GOODS) %></td><td class="label">Tỷ lệ đạt lũy kế / Cumulative pass rate</td><td><%= ph(s.CUMULATIVE_PASS_RATE) %></td></tr>
-    <tr><td class="label">Tổng không đạt/chờ xử lý / Total failed/pending</td><td><%= ph(s.TOTAL_FAILED_PENDING) %></td><td class="label">Tỷ lệ không đạt lũy kế / Cumulative fail rate</td><td><%= ph(s.CUMULATIVE_FAIL_RATE) %></td></tr>
-    <tr><td class="label">Tổng đã giao / Total delivered</td><td><%= ph(s.TOTAL_DELIVERED) %></td><td class="label">Tổng tồn kho / Total stock on hand</td><td><%= ph(s.TOTAL_STOCK_ON_HAND) %></td></tr>
-    <tr><td class="label">Chênh lệch cần xử lý / Difference to resolve</td><td><%= ph(s.DIFFERENCE_TO_RESOLVE) %></td><td class="label">Hướng xử lý / Handling action</td><td><%= ph(s.HANDLING_ACTION) %></td></tr>
+    <tr><td class="label">Tỷ lệ đạt / Pass rate</td><td><%= ph(s.CUMULATIVE_PASS_RATE) %></td><td class="label">Tỷ lệ không đạt / Fail rate</td><td><%= ph(s.CUMULATIVE_FAIL_RATE) %></td></tr>
+    <tr><td class="label">Lý do không đạt / Reason for failure</td><td><%= ph(s.FAIL_REASON) %></td><td class="label">Hướng xử lý / Handling action</td><td><%= ph(s.HANDLING_ACTION) %></td></tr>
   </table>
   <br>
   <table>

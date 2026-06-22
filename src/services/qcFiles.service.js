@@ -130,11 +130,10 @@ export async function updateQCFile(p) {
 }
 
 const SUMMARY_MAP = {
-  producedQty: 'produced_qty', pendingProductionQty: 'pending_production_qty',
-  totalPassedFinishedGoods: 'total_passed_finished_goods', cumulativePassRate: 'cumulative_pass_rate',
-  totalFailedPending: 'total_failed_pending', cumulativeFailRate: 'cumulative_fail_rate',
-  totalDelivered: 'total_delivered', totalStockOnHand: 'total_stock_on_hand',
-  differenceToResolve: 'difference_to_resolve', handlingAction: 'handling_action',
+  cumulativePassRate: 'cumulative_pass_rate',
+  cumulativeFailRate: 'cumulative_fail_rate',
+  failReason: 'fail_reason',
+  handlingAction: 'handling_action',
 };
 
 export async function updateSummary(p) {

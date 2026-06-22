@@ -27,7 +27,7 @@ export function findSummary(id) {
   return queryOne(
     `SELECT qc_file_id, produced_qty, pending_production_qty, total_passed_finished_goods,
        cumulative_pass_rate, total_failed_pending, cumulative_fail_rate, total_delivered,
-       total_stock_on_hand, difference_to_resolve, handling_action,
+       total_stock_on_hand, difference_to_resolve, handling_action, fail_reason,
        to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') AS updated_at
      FROM summaries WHERE qc_file_id = $1`,
     [id]

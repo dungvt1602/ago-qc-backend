@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS summaries (
   total_stock_on_hand         TEXT,
   difference_to_resolve       TEXT,
   handling_action             TEXT,
+  fail_reason                 TEXT,
   updated_at                  TIMESTAMPTZ DEFAULT now()
 );
 
