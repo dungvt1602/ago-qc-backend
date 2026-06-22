@@ -76,6 +76,44 @@
       <div class="field-line"><b>Nhận xét / Remarks:</b> ${ph(item.REMARKS)}</div>
     </td>`;
   }
+
+  function dailyPagesHtml() {
+    let out = '';
+    (d.dailySessions || []).forEach(function (sess) {
+      out += `<div class="page">${header()}`
+        + `<div class="title"><h1>BÁO CÁO QUÁ TRÌNH QC HÀNG HOÁ</h1><h2>DAILY QC PROCESS REPORT</h2></div>`
+        + `<table class="qc-head">`
+        + `<tr><td class="label">Ngày QC / QC date</td><td>${ph(sess.QC_DATE)}</td><td class="label">Kho/Cơ sở / Warehouse/Facility</td><td>${ph(sess.WAREHOUSE)}</td></tr>`
+        + `<tr><td class="label">Mã lô / Lot code</td><td>${ph(sess.LOT_CODE)}</td><td class="label">Nhân viên QC / QC staff</td><td>${ph(sess.QC_STAFF)}</td></tr>`
+        + `</table><br>`
+        + `<table class="photo-grid">`
+        + `<tr>${photoCell(sess.items[0], false)}${photoCell(sess.items[1], false)}${photoCell(sess.items[2], false)}</tr>`
+        + `<tr>${photoCell(sess.items[3], false)}${photoCell(sess.items[4], false)}${photoCell(sess.items[5], false)}</tr>`
+        + `</table>`
+        + `<div class="note">Ảnh phải rõ mã lô/kho/ngày hoặc có bảng nhận diện đi kèm. Không chỉnh sửa làm thay đổi bản chất tình trạng hàng hóa.<br>Photos must clearly show lot code/warehouse/date or include an ID board. Do not edit photos in a way that changes the actual condition of goods.</div>`
+        + `${footer()}</div>`;
+    });
+    return out;
+  }
+
+  function containerPagesHtml() {
+    const ctnVi = d.containerFirst ? 'HÌNH ẢNH KIỂM TRA CONTAINER' : 'HÌNH ẢNH GIAO HÀNG - CONTAINER';
+    const ctnEn = d.containerFirst ? 'CONTAINER INSPECTION PHOTOS' : 'DELIVERY - CONTAINER PHOTOS';
+    let out = '';
+    (d.containerChunks || []).forEach(function (group, ci) {
+      let rows = '';
+      for (let r = 0; r < 3; r++) {
+        rows += '<tr>';
+        for (let c = 0; c < 3; c++) { const idx = r * 3 + c; rows += group[idx] ? photoCell(group[idx], true) : '<td>&nbsp;</td>'; }
+        rows += '</tr>';
+      }
+      const note = (ci === d.containerChunks.length - 1)
+        ? `<div class="note" style="margin-top:14px;">Tài liệu này là bộ hồ sơ QC của một lô hàng. This document is the QC record for one lot.</div>`
+        : '';
+      out += `<div class="page">${header()}<div class="title"><h1>${ctnVi}</h1><h2>${ctnEn}</h2></div><table class="photo-grid">${rows}</table>${note}${footer()}</div>`;
+    });
+    return out;
+  }
 %>
 
 <!-- Trang 1: thông tin lô hàng + thống kê + xuất hàng -->
@@ -127,60 +165,7 @@
   <%- footer() %>
 </div>
 
-<!-- Các trang QC hàng ngày: mỗi phiên QC một trang -->
-<% d.dailySessions.forEach(function (sess) { %>
-<div class="page">
-  <%- header() %>
-  <div class="title"><h1>BÁO CÁO QUÁ TRÌNH QC HÀNG HOÁ</h1><h2>DAILY QC PROCESS REPORT</h2></div>
-  <table class="qc-head">
-    <tr><td class="label">Ngày QC / QC date</td><td><%= ph(sess.QC_DATE) %></td><td class="label">Kho/Cơ sở / Warehouse/Facility</td><td><%= ph(sess.WAREHOUSE) %></td></tr>
-    <tr><td class="label">Mã lô / Lot code</td><td><%= ph(sess.LOT_CODE) %></td><td class="label">Nhân viên QC / QC staff</td><td><%= ph(sess.QC_STAFF) %></td></tr>
-  </table>
-  <br>
-  <table class="photo-grid">
-    <tr>
-      <%- photoCell(sess.items[0], false) %>
-      <%- photoCell(sess.items[1], false) %>
-      <%- photoCell(sess.items[2], false) %>
-    </tr>
-    <tr>
-      <%- photoCell(sess.items[3], false) %>
-      <%- photoCell(sess.items[4], false) %>
-      <%- photoCell(sess.items[5], false) %>
-    </tr>
-  </table>
-  <div class="note">
-    Ảnh phải rõ mã lô/kho/ngày hoặc có bảng nhận diện đi kèm. Không chỉnh sửa làm thay đổi bản chất tình trạng hàng hóa.<br>
-    Quy ước mã ảnh đề xuất: [Mã lô]_[Ngày]_[Kho]_STT Ví dụ: LOT01_180626_KHOA_01.<br>
-    Photos must clearly show lot code/warehouse/date or include an ID board. Do not edit photos in a way that changes the actual condition of goods.<br>
-    Suggested photo code: [Lot]_[Date]_[Warehouse]_No. Example: LOT01_180626_KHOA_01.
-  </div>
-  <%- footer() %>
-</div>
-<% }) %>
-
-<!-- Các trang ảnh container: mỗi 9 ảnh một trang (lưới 3x3) -->
-<% d.containerChunks.forEach(function (group, ci) { %>
-<div class="page">
-  <%- header() %>
-  <div class="title"><h1>HÌNH ẢNH GIAO HÀNG - CONTAINER</h1><h2>DELIVERY - CONTAINER PHOTOS</h2></div>
-  <table class="photo-grid">
-    <% for (let r = 0; r < 3; r++) { %>
-      <tr>
-        <% for (let c = 0; c < 3; c++) { const idx = r * 3 + c; %>
-          <% if (group[idx]) { %><%- photoCell(group[idx], true) %><% } else { %><td>&nbsp;</td><% } %>
-        <% } %>
-      </tr>
-    <% } %>
-  </table>
-  <% if (ci === d.containerChunks.length - 1) { %>
-    <div class="note" style="margin-top:14px;">
-      Tài liệu này là bộ hồ sơ QC của một lô hàng. Các trang Phiếu QC hàng ngày và Hình ảnh QC hàng ngày được nhân bản theo số ngày và số kho/cơ sở thực tế.<br>
-      This document is the QC record for one lot. Daily QC and photo pages may be duplicated according to actual production days and warehouses/facilities.
-    </div>
-  <% } %>
-  <%- footer() %>
-</div>
-<% }) %>
+<!-- Trang QC ngày + ảnh container. Hàng nhập (containerFirst): ảnh container lên TRƯỚC. -->
+<% if (d.containerFirst) { %><%- containerPagesHtml() %><%- dailyPagesHtml() %><% } else { %><%- dailyPagesHtml() %><%- containerPagesHtml() %><% } %>
 </body>
 </html>

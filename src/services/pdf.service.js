@@ -47,6 +47,8 @@ export async function exportPDF(qcFileId, variant = 'internal') {
   // Chia ảnh container thành các trang 9 ảnh, tính tổng số trang.
   data.containerChunks = chunk(data.containerItems, 9);
   data.totalPages = 1 + data.dailySessions.length + data.containerChunks.length;
+  // Hàng nhập: đưa ảnh container lên TRƯỚC phần QC ngày trong PDF.
+  data.containerFirst = data.qcFile.QC_TYPE === 'IMPORT';
 
   // Chọn khuôn theo loại bản: nội bộ (đầy đủ) hoặc khách hàng (gọn).
   const isCustomer = variant === 'customer';
