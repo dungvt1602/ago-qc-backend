@@ -3,7 +3,7 @@ import { query, queryOne } from '../lib/db.js';
 
 // Dùng to_char để trả ngày/giờ ở dạng chuỗi giống định dạng cũ -> frontend không cần đổi cách hiển thị.
 const SELECT_FILE = `
-  SELECT id, qc_file_no, lot_code, contract_no, po_no, production_order,
+  SELECT id, qc_file_no, lot_code, qc_type, contract_no, po_no, production_order,
     standard_appendix, product_name, specification, supplier, supplier_code,
     po_quantity, unit,
     to_char(start_date, 'YYYY-MM-DD') AS start_date,
@@ -44,16 +44,17 @@ export async function insert(data) {
        qc_file_no, lot_code, contract_no, po_no, production_order, standard_appendix,
        product_name, specification, supplier, supplier_code, po_quantity, unit,
        start_date, est_finish_date, container_no, seal_no, container_loading_date,
-       qc_staff, status
+       qc_staff, status, qc_type
      ) VALUES (
        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
-       NULLIF($13,'')::date, NULLIF($14,'')::date, $15,$16, NULLIF($17,'')::date, $18,$19
+       NULLIF($13,'')::date, NULLIF($14,'')::date, $15,$16, NULLIF($17,'')::date, $18,$19,$20
      ) RETURNING id`,
     [
       data.qc_file_no, data.lot_code, data.contract_no, data.po_no, data.production_order,
       data.standard_appendix, data.product_name, data.specification, data.supplier,
       data.supplier_code, data.po_quantity, data.unit, data.start_date, data.est_finish_date,
       data.container_no, data.seal_no, data.container_loading_date, data.qc_staff, data.status,
+      data.qc_type,
     ]
   );
   return row.id;

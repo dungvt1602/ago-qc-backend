@@ -48,6 +48,7 @@ export async function createQCFile(p) {
     container_loading_date: p.containerLoadingDate || '',
     qc_staff: p.qcStaff || '',
     status: 'DRAFT',
+    qc_type: (p.qcType === 'EXPORT') ? 'EXPORT' : 'IMPORT',
   });
   await repo.insertSummary(id);
   return getQCFile(id);

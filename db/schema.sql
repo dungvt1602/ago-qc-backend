@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS qc_files (
   seal_no                TEXT,
   container_loading_date DATE,
   qc_staff               TEXT,
+  qc_type                TEXT DEFAULT 'IMPORT',
   status                 TEXT DEFAULT 'DRAFT',
   pdf_url                TEXT,
   pdf_url_customer       TEXT,
