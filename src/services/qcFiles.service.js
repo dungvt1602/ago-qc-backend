@@ -80,8 +80,11 @@ export async function getQCFile(id) {
     return session;
   });
 
-  // Luôn hiện đủ 21 ảnh container.
-  const containerItems = CONTAINER_ITEMS.map((def) => {
+  // Hàng nhập kho (IMPORT): chỉ dùng ảnh container từ 13 tới cuối (13-21). Hàng xuất: đủ 21.
+  const containerDefs = qcFile.QC_TYPE === 'IMPORT'
+    ? CONTAINER_ITEMS.filter((def) => def.no >= 13)
+    : CONTAINER_ITEMS;
+  const containerItems = containerDefs.map((def) => {
     const found = containerRows.find((c) => Number(c.photo_no) === def.no);
     return found ? upperKeys(found) : emptyContainerItem(def, qcFile);
   });
