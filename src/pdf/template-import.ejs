@@ -25,6 +25,8 @@
     .pbox-title { background:#e9f1e3; color:#3f7f25; font-weight:700; text-align:center; padding:5px; font-size:9.5px; min-height:24px; border-bottom:1px solid #5d8d3e; }
     .pbox-img { height:50mm; display:flex; align-items:center; justify-content:center; padding:4px; }
     .pbox-img img { max-width:100%; max-height:48mm; object-fit:contain; }
+    .sphoto-img { height:92mm; display:flex; align-items:center; justify-content:center; padding:6px; }
+    .sphoto-img img { max-width:100%; max-height:90mm; object-fit:contain; }
     .pbox-cap { border-top:1px solid #5d8d3e; padding:4px 6px; font-size:9px; line-height:1.3; }
     .placeholder { color:#999; font-style:italic; }
     .footer { position:absolute; left:0; right:0; bottom:0; border-top:1px solid #3f7f25; padding-top:4px; color:#777; font-style:italic; display:flex; justify-content:space-between; font-size:9px; }
@@ -35,15 +37,17 @@
   const f = d.qcFile, s = d.summary || {}, set = d.settings || {};
   const v = (x) => (x === null || x === undefined || x === '') ? '—' : String(x);
 
-  // Gom tất cả ảnh giám định: ảnh container (13-21, đã đánh số 1-9) + các mục QC chất lượng.
-  const allPhotos = [];
-  (d.containerItems || []).forEach((it) => allPhotos.push(it));
-  (d.dailySessions || []).forEach((sess) => (sess.items || []).forEach((it) => allPhotos.push(it)));
+  // Ảnh container (13-21, đã đánh số 1-9) -> các trang ảnh container (6 ảnh/trang).
+  const containerPhotos = d.containerItems || [];
   const PER_PAGE = 6; // 2 cột x 3 hàng
-  const photoPages = [];
-  for (let i = 0; i < allPhotos.length; i += PER_PAGE) photoPages.push(allPhotos.slice(i, i + PER_PAGE));
+  const containerPages = [];
+  for (let i = 0; i < containerPhotos.length; i += PER_PAGE) containerPages.push(containerPhotos.slice(i, i + PER_PAGE));
 
-  const totalPages = 1 + photoPages.length;
+  // Mẫu QC: mỗi mẫu 1 trang (4 ảnh xếp 2x2).
+  const samples = [];
+  (d.dailySessions || []).forEach((sess) => (sess.samples || []).forEach((sm) => samples.push(sm)));
+
+  const totalPages = 1 + containerPages.length + samples.length;
   let page = 0;
 
   function header() {
@@ -70,6 +74,11 @@
         <div class="pbox-img">${img}</div>
         <div class="pbox-cap"><b>Đạt / Pass:</b> ${v(it.PASS_RATE)} &nbsp;|&nbsp; <b>Không đạt / Fail:</b> ${v(it.FAIL_RATE)}<br><b>Nhận xét / Remarks:</b> ${v(it.REMARKS)}</div>
       </td>`;
+  }
+  // Ô ảnh của mẫu (ảnh to hơn vì chỉ 4 ảnh/trang). p.render = ảnh base64 do pdf.service nhúng sẵn.
+  function samplePhotoCell(p, idx) {
+    const img = (p && p.render) ? `<img src="${p.render}" alt="photo">` : `<div class="placeholder">[chưa có ảnh / no photo]</div>`;
+    return `<td><div class="pbox-title">Ảnh ${idx}</div><div class="sphoto-img">${img}</div></td>`;
   }
 %>
 
@@ -106,15 +115,28 @@
   <%- footer() %>
 </div>
 
-<!-- Các trang ảnh giám định: 2 ảnh/hàng, 6 ảnh/trang -->
-<% photoPages.forEach(function (grp) { %>
+<!-- Các trang ảnh container: 2 ảnh/hàng, 6 ảnh/trang -->
+<% containerPages.forEach(function (grp) { %>
 <div class="page">
   <%- header() %>
-  <div class="sec">HÌNH ẢNH GIÁM ĐỊNH / INSPECTION PHOTOS</div>
+  <div class="sec">HÌNH ẢNH KIỂM TRA CONTAINER / CONTAINER INSPECTION</div>
   <table class="photos">
     <% for (let r = 0; r < 3; r++) { %>
       <tr><%- photoCell(grp[r * 2]) %><%- photoCell(grp[r * 2 + 1]) %></tr>
     <% } %>
+  </table>
+  <%- footer() %>
+</div>
+<% }) %>
+
+<!-- Mỗi mẫu QC chất lượng = 1 trang, 4 ảnh xếp 2x2 -->
+<% samples.forEach(function (sm) { %>
+<div class="page">
+  <%- header() %>
+  <div class="sec">MẪU <%= sm.SAMPLE_NO %> - QC CHẤT LƯỢNG / SAMPLE <%= sm.SAMPLE_NO %></div>
+  <table class="photos">
+    <tr><%- samplePhotoCell((sm.PHOTOS || [])[0], 1) %><%- samplePhotoCell((sm.PHOTOS || [])[1], 2) %></tr>
+    <tr><%- samplePhotoCell((sm.PHOTOS || [])[2], 3) %><%- samplePhotoCell((sm.PHOTOS || [])[3], 4) %></tr>
   </table>
   <%- footer() %>
 </div>

@@ -36,6 +36,15 @@ export async function exportPDF(qcFileId, variant = 'internal') {
     })
   );
 
+  // Tải ảnh của các MẪU (hàng nhập) -> nhúng base64 vào trường render.
+  const samplePhotos = [];
+  data.dailySessions.forEach((s) => (s.samples || []).forEach((sm) => (sm.PHOTOS || []).forEach((p) => { if (p && p.path) samplePhotos.push(p); })));
+  await Promise.all(
+    samplePhotos.map(async (p) => {
+      try { p.render = await downloadAsDataUrl(config.photoBucket, p.path); } catch { p.render = ''; }
+    })
+  );
+
   // Gắn nhãn ảnh cho từng hạng mục QC ngày.
   data.dailySessions.forEach((s) =>
     s.items.forEach((it) => {
