@@ -50,9 +50,11 @@ export async function exportPDF(qcFileId, variant = 'internal') {
   // Hàng nhập: đưa ảnh container lên TRƯỚC phần QC ngày trong PDF.
   data.containerFirst = data.qcFile.QC_TYPE === 'IMPORT';
 
-  // Chọn khuôn theo loại bản: nội bộ (đầy đủ) hoặc khách hàng (gọn).
+  // Chọn khuôn: hàng nhập -> mẫu báo cáo giám định riêng; hàng xuất -> mẫu cũ (nội bộ/khách hàng).
   const isCustomer = variant === 'customer';
-  const templateFile = isCustomer ? 'template-customer.ejs' : 'template.ejs';
+  const templateFile = data.qcFile.QC_TYPE === 'IMPORT'
+    ? 'template-import.ejs'
+    : (isCustomer ? 'template-customer.ejs' : 'template.ejs');
   const pdfBuffer = await renderPdf(data, templateFile);
 
   // Tên file CỐ ĐỊNH theo hồ sơ + loại bản -> lần xuất sau GHI ĐÈ file cũ (không tích rác).

@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page { size: A4 portrait; margin: 12mm 11mm 12mm 11mm; }
+    body { font-family: Arial, 'Times New Roman', sans-serif; color:#111; font-size:10px; margin:0; }
+    .page { page-break-after: always; min-height: 268mm; position: relative; }
+    .page:last-child { page-break-after: auto; }
+    .header { display:flex; align-items:center; justify-content:space-between; border-bottom:2px solid #3f7f25; padding-bottom:8px; }
+    .header .logo img { height:40px; }
+    .header .logo .txt { font-size:26px; font-weight:800; color:#3f7f25; }
+    .company { text-align:right; font-size:9px; line-height:1.35; }
+    .company .name { color:#3f7f25; font-weight:700; font-size:11px; }
+    .report-no { text-align:center; font-weight:700; font-size:11px; margin:6px 0 0; color:#17220f; }
+    .doc-title { text-align:center; margin:8px 0 12px; }
+    .doc-title h1 { color:#3f7f25; font-size:18px; margin:0; letter-spacing:.3px; }
+    .doc-title h2 { color:#3f7f25; font-style:italic; font-weight:500; font-size:12px; margin:2px 0 0; }
+    table.info { border-collapse:collapse; width:100%; table-layout:fixed; }
+    table.info td { border:1px solid #5d8d3e; padding:5px 7px; vertical-align:top; font-size:10px; }
+    table.info td.label { background:#e9f1e3; font-weight:700; width:22%; }
+    .sec { background:#3f7f25; color:#fff; font-weight:700; padding:5px 8px; text-transform:uppercase; font-size:10px; margin:12px 0 6px; }
+    table.photos { border-collapse:collapse; width:100%; table-layout:fixed; }
+    table.photos td { width:50%; border:1px solid #5d8d3e; vertical-align:top; padding:0; }
+    .pbox-title { background:#e9f1e3; color:#3f7f25; font-weight:700; text-align:center; padding:5px; font-size:9.5px; min-height:24px; border-bottom:1px solid #5d8d3e; }
+    .pbox-img { height:50mm; display:flex; align-items:center; justify-content:center; padding:4px; }
+    .pbox-img img { max-width:100%; max-height:48mm; object-fit:contain; }
+    .pbox-cap { border-top:1px solid #5d8d3e; padding:4px 6px; font-size:9px; line-height:1.3; }
+    .placeholder { color:#999; font-style:italic; }
+    .footer { position:absolute; left:0; right:0; bottom:0; border-top:1px solid #3f7f25; padding-top:4px; color:#777; font-style:italic; display:flex; justify-content:space-between; font-size:9px; }
+  </style>
+</head>
+<body>
+<%
+  const f = d.qcFile, s = d.summary || {}, set = d.settings || {};
+  const v = (x) => (x === null || x === undefined || x === '') ? '—' : String(x);
+
+  // Gom tất cả ảnh giám định: ảnh container (13-21, đã đánh số 1-9) + các mục QC chất lượng.
+  const allPhotos = [];
+  (d.containerItems || []).forEach((it) => allPhotos.push(it));
+  (d.dailySessions || []).forEach((sess) => (sess.items || []).forEach((it) => allPhotos.push(it)));
+  const PER_PAGE = 6; // 2 cột x 3 hàng
+  const photoPages = [];
+  for (let i = 0; i < allPhotos.length; i += PER_PAGE) photoPages.push(allPhotos.slice(i, i + PER_PAGE));
+
+  const totalPages = 1 + photoPages.length;
+  let page = 0;
+
+  function header() {
+    const logo = d.logoUrl ? `<img src="${d.logoUrl}" alt="agofruit">` : `<span class="txt">agofruit</span>`;
+    return `<div class="header">
+        <div class="logo">${logo}</div>
+        <div class="company">
+          <div class="name">${v(set.COMPANY_NAME || 'AGO IMPORT EXPORT CO., LTD')}</div>
+          <div>${v(set.ADDRESS || '50 Street No 5, Linh Xuan Ward, Ho Chi Minh City')}</div>
+          <div><i>Website: ${v(set.WEBSITE || 'agoexim.com')} | Email: ${v(set.EMAIL || 'info@agoexim.com')}</i></div>
+        </div>
+      </div>
+      <div class="report-no">BÁO CÁO GIÁM ĐỊNH HÀNG NHẬP SỐ / REPORT NO: ${v(f.QC_FILE_NO)}</div>`;
+  }
+  function footer() {
+    page++;
+    return `<div class="footer"><div>AGO Fruit | Báo cáo giám định hàng nhập / Import Inspection Report</div><div>Trang/Page ${page}/${totalPages}</div></div>`;
+  }
+  function photoCell(it) {
+    if (!it) return `<td></td>`;
+    const img = it.PHOTO_RENDER_URL ? `<img src="${it.PHOTO_RENDER_URL}" alt="photo">` : `<div class="placeholder">[chưa có ảnh / no photo]</div>`;
+    return `<td>
+        <div class="pbox-title">${v(it.ITEM_NAME_VI)}</div>
+        <div class="pbox-img">${img}</div>
+        <div class="pbox-cap"><b>Đạt / Pass:</b> ${v(it.PASS_RATE)} &nbsp;|&nbsp; <b>Không đạt / Fail:</b> ${v(it.FAIL_RATE)}<br><b>Nhận xét / Remarks:</b> ${v(it.REMARKS)}</div>
+      </td>`;
+  }
+%>
+
+<!-- Trang bìa: header + bảng thông tin + kết quả đánh giá -->
+<div class="page">
+  <%- header() %>
+  <div class="doc-title">
+    <h1>BÁO CÁO GIÁM ĐỊNH HÀNG NHẬP</h1>
+    <h2>IMPORT INSPECTION REPORT</h2>
+  </div>
+  <table class="info">
+    <tr><td class="label">Mã hồ sơ / Report no.</td><td><%= v(f.QC_FILE_NO) %></td><td class="label">Mã lô / Lot no.</td><td><%= v(f.LOT_CODE) %></td></tr>
+    <tr><td class="label">Nhà cung cấp / Người XK</td><td><%= v(f.SUPPLIER) %></td><td class="label">Mã NCC / Supplier code</td><td><%= v(f.SUPPLIER_CODE) %></td></tr>
+    <tr><td class="label">Hợp đồng / Invoice</td><td><%= v(f.CONTRACT_NO) %></td><td class="label">Số PO / Ref no.</td><td><%= v(f.PO_NO) %></td></tr>
+    <tr><td class="label">Tên hàng / Product</td><td><%= v(f.PRODUCT_NAME) %></td><td class="label">Quy cách / Size</td><td><%= v(f.SPECIFICATION) %></td></tr>
+    <tr><td class="label">Số lượng / Quantity</td><td><%= v(f.PO_QUANTITY) %> <%= f.UNIT ? v(f.UNIT) : '' %></td><td class="label">Ngày hàng về / Arrival date</td><td><%= v(f.CONTAINER_LOADING_DATE) %></td></tr>
+    <tr><td class="label">Số container / Container no.</td><td><%= v(f.CONTAINER_NO) %></td><td class="label">Số seal / Seal no.</td><td><%= v(f.SEAL_NO) %></td></tr>
+    <tr><td class="label">Nhân viên QC / Inspector</td><td><%= v(f.QC_STAFF) %></td><td class="label">Ngày kiểm / Inspected date</td><td><%= v(f.START_DATE) %></td></tr>
+  </table>
+
+  <div class="sec">KẾT QUẢ ĐÁNH GIÁ / ASSESSMENT RESULT</div>
+  <table class="info">
+    <tr><td class="label">Tỷ lệ đạt / Pass rate</td><td><%= v(s.CUMULATIVE_PASS_RATE) %></td><td class="label">Tỷ lệ không đạt / Fail rate</td><td><%= v(s.CUMULATIVE_FAIL_RATE) %></td></tr>
+    <tr><td class="label">Lý do không đạt / Reason</td><td colspan="3"><%= v(s.FAIL_REASON) %></td></tr>
+    <tr><td class="label">Hướng xử lý / Handling</td><td colspan="3"><%= v(s.HANDLING_ACTION) %></td></tr>
+  </table>
+
+  <table class="info" style="margin-top:18px; border:0;">
+    <tr>
+      <td style="border:0; text-align:center; color:#3f7f25; font-weight:700; padding-top:24px;">NGƯỜI LẬP / PREPARED BY<br><span style="color:#777; font-weight:400; font-style:italic;">(Ký, ghi rõ họ tên)</span></td>
+      <td style="border:0; text-align:center; color:#3f7f25; font-weight:700; padding-top:24px;">QC MANAGER<br><span style="color:#777; font-weight:400; font-style:italic;">(Ký, ghi rõ họ tên)</span></td>
+    </tr>
+  </table>
+  <%- footer() %>
+</div>
+
+<!-- Các trang ảnh giám định: 2 ảnh/hàng, 6 ảnh/trang -->
+<% photoPages.forEach(function (grp) { %>
+<div class="page">
+  <%- header() %>
+  <div class="sec">HÌNH ẢNH GIÁM ĐỊNH / INSPECTION PHOTOS</div>
+  <table class="photos">
+    <% for (let r = 0; r < 3; r++) { %>
+      <tr><%- photoCell(grp[r * 2]) %><%- photoCell(grp[r * 2 + 1]) %></tr>
+    <% } %>
+  </table>
+  <%- footer() %>
+</div>
+<% }) %>
+</body>
+</html>
