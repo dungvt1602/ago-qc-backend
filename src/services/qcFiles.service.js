@@ -81,12 +81,20 @@ export async function getQCFile(id) {
   });
 
   // Hàng nhập kho (IMPORT): chỉ dùng ảnh container từ 13 tới cuối (13-21). Hàng xuất: đủ 21.
-  const containerDefs = qcFile.QC_TYPE === 'IMPORT'
+  const isImport = qcFile.QC_TYPE === 'IMPORT';
+  const containerDefs = isImport
     ? CONTAINER_ITEMS.filter((def) => def.no >= 13)
     : CONTAINER_ITEMS;
-  const containerItems = containerDefs.map((def) => {
+  const containerItems = containerDefs.map((def, idx) => {
     const found = containerRows.find((c) => Number(c.photo_no) === def.no);
-    return found ? upperKeys(found) : emptyContainerItem(def, qcFile);
+    const item = found ? upperKeys(found) : emptyContainerItem(def, qcFile);
+    if (isImport) {
+      // Đánh số nhãn hiển thị lại 1..9 (GIỮ NGUYÊN PHOTO_NO thật để lưu/đọc đúng chỗ).
+      const seq = idx + 1;
+      item.ITEM_NAME_VI = String(item.ITEM_NAME_VI || '').replace(/^(ẢNH\s*)\d+/i, `$1${seq}`);
+      item.ITEM_NAME_EN = String(item.ITEM_NAME_EN || '').replace(/^(PHOTO\s*)\d+/i, `$1${seq}`);
+    }
+    return item;
   });
 
   return { qcFile, summary, dailySessions, containerItems, dailyItemDefs: DAILY_ITEMS };
