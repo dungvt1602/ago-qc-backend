@@ -1,0 +1,178 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page { size: A4 portrait; margin: 11mm 11mm 10mm 11mm; }
+    body { font-family: Arial, 'Times New Roman', sans-serif; color:#111; font-size:10px; margin:0; }
+    .page { page-break-after: always; min-height: 275mm; position: relative; }
+    .page:last-child { page-break-after: auto; }
+    .header { display:flex; align-items:flex-start; justify-content:space-between; border-bottom:2px solid #3f7f25; padding-bottom:6px; margin-bottom:10px; }
+    .logo { font-size:28px; font-weight:800; color:#3f7f25; letter-spacing:-1px; }
+    .company { text-align:right; font-size:10px; line-height:1.3; }
+    .company .name { color:#3f7f25; font-weight:700; font-size:12px; }
+    .republic { text-align:center; font-weight:700; font-size:13px; line-height:1.3; margin-top:2px; }
+    .republic .sub { font-size:11px; }
+    .title { text-align:center; margin:12px 0 10px; }
+    .title h1 { color:#3f7f25; margin:0; font-size:19px; letter-spacing:.2px; }
+    .place-date { text-align:right; font-style:italic; margin-bottom:10px; }
+    table { border-collapse: collapse; width:100%; table-layout:fixed; }
+    th, td { border:1px solid #5d8d3e; padding:5px; vertical-align:middle; }
+    .section { background:#3f7f25; color:#fff; font-weight:700; text-transform:uppercase; text-align:left; }
+    .label { background:#e9f1e3; font-weight:700; width:22%; }
+    .sign-row td { border:0; text-align:center; padding-top:20px; color:#3f7f25; font-weight:700; }
+    .sign-note { color:#777; font-style:italic; font-weight:400; margin-top:4px; }
+    .qc-head td { height:22px; }
+    .photo-grid td { padding:0; vertical-align:top; }
+    .box-title { color:#3f7f25; font-weight:700; text-align:center; min-height:26px; padding:5px 4px; border-bottom:1px solid #5d8d3e; text-transform:uppercase; font-size:9px; }
+    .photo-wrap { height:150px; display:flex; align-items:center; justify-content:center; padding:4px; }
+    .photo-wrap img { max-width:100%; max-height:145px; object-fit:contain; }
+    .photo-desc { text-align:center; padding:5px 6px; min-height:30px; border-top:1px solid #5d8d3e; color:#444; font-size:9px; }
+    .placeholder { color:#999; font-style:italic; }
+    .note { font-size:9px; color:#666; font-style:italic; margin:4px 0 8px; text-align:center; }
+    .footer { position:absolute; left:0; right:0; bottom:0; border-top:1px solid #3f7f25; padding-top:4px; color:#777; font-style:italic; display:flex; justify-content:space-between; font-size:9px; }
+    .sample .photo-wrap { height:330px; }
+    .sample .photo-wrap img { max-height:325px; }
+  </style>
+</head>
+<body>
+<%
+  // Bản PDF TIẾNG ANH dành cho KHÁCH HÀNG — dựng theo mẫu docx của AGO.
+  // Khác bản nội bộ: không có mục thống kê, ô ảnh không hiện tỉ lệ đạt/không đạt/nhận xét,
+  // có thêm dòng Customer, và dùng địa chỉ công ty bản tiếng Anh.
+  const f = d.qcFile;
+  const set = d.settings || {};
+  const v = (x) => (x === null || x === undefined || x === '') ? '' : String(x);
+  const dots = (x) => v(x) || '.....................................';
+
+  const isImport = f.QC_TYPE === 'IMPORT';
+  const sessions = d.dailySessions || [];
+  const ctnChunks = d.containerChunks || [];
+  const samples = isImport ? sessions.flatMap((s) => s.samples || []) : [];
+  const dailyPages = isImport ? 0 : sessions.length;
+  const totalPages = 1 + dailyPages + ctnChunks.length + samples.length;
+  let page = 0;
+
+  function header() {
+    const logo = d.logoUrl ? `<img src="${d.logoUrl}" alt="agofruit" style="height:42px">`
+      : `<div class="logo">ago<span style="color:#5a9d35">fruit</span></div>`;
+    return `<div class="header">
+        ${logo}
+        <div class="company">
+          <div class="name">${v(set.COMPANY_NAME_EN || 'AGO IMPORT EXPORT COMPANY LIMITED')}</div>
+          <div>${v(set.ADDRESS_EN || 'Km 5, National Highway 1A, Tuyen Quang Commune, Lam Dong Province, Vietnam')}</div>
+          <div><i>Website: ${v(set.WEBSITE || 'agoexim.com')} &nbsp;|&nbsp; Email: ${v(set.EMAIL || 'info@agoexim.com')}</i></div>
+        </div>
+      </div>`;
+  }
+
+  function footer() {
+    page++;
+    return `<div class="footer"><div>AGO Fruit | QC Lot Report</div><div>Page ${page}/${totalPages}</div></div>`;
+  }
+
+  // Ô ảnh: tiêu đề + ảnh + mô tả. KHÔNG có tỉ lệ đạt / không đạt / nhận xét (bản khách hàng).
+  function photoCell(item, width) {
+    if (!item) return `<td style="width:${width}"></td>`;
+    const img = item.PHOTO_RENDER_URL
+      ? `<img src="${item.PHOTO_RENDER_URL}" alt="QC photo">`
+      : `<div class="placeholder">[Insert photo here]</div>`;
+    return `<td style="width:${width}">
+        <div class="box-title">${v(item.EN_TITLE || item.ITEM_NAME_EN)}</div>
+        <div class="photo-wrap">${img}</div>
+        <div class="photo-desc">${v(item.EN_DESC)}</div>
+      </td>`;
+  }
+
+  // Ô ảnh của mẫu (hàng nhập): ảnh to, chỉ đánh số thứ tự.
+  function sampleCell(p, idx) {
+    const img = (p && p.render) ? `<img src="${p.render}" alt="QC photo">`
+      : `<div class="placeholder">[Insert photo here]</div>`;
+    return `<td style="width:50%">
+        <div class="box-title">PHOTO ${idx}</div>
+        <div class="photo-wrap">${img}</div>
+      </td>`;
+  }
+%>
+
+<!-- Trang bìa -->
+<div class="page">
+  <%- header() %>
+  <div class="republic">
+    SOCIALIST REPUBLIC OF VIETNAM
+    <div class="sub">Independence - Freedom - Happiness</div>
+  </div>
+  <div class="title"><h1>QC LOT INFORMATION AND PHOTO REPORT</h1></div>
+  <div class="place-date">Lam Dong, <%= dots(f.START_DATE) %></div>
+
+  <table>
+    <tr><th class="section" colspan="4">A. LOT INFORMATION</th></tr>
+    <tr><td class="label">QC Report No.</td><td><%= dots(f.QC_FILE_NO) %></td><td class="label">Lot No.</td><td><%= dots(f.LOT_CODE) %></td></tr>
+    <tr><td class="label">Product Name</td><td><%= dots(f.PRODUCT_NAME) %></td><td class="label">Specification / Size / Grade</td><td><%= dots(f.SPECIFICATION) %></td></tr>
+    <tr><td class="label">Quantity as per PO</td><td><%= dots(f.PO_QUANTITY) %></td><td class="label">Unit of Measure</td><td><%= dots(f.UNIT) %></td></tr>
+  </table>
+  <br>
+  <table>
+    <tr><th class="section" colspan="4">C. SHIPMENT INFORMATION</th></tr>
+    <tr><td class="label">Customer</td><td colspan="3"><%= dots(f.CUSTOMER) %></td></tr>
+    <tr><td class="label">Container No.</td><td><%= dots(f.CONTAINER_NO) %></td><td class="label">Seal No.</td><td><%= dots(f.SEAL_NO) %></td></tr>
+    <tr><td class="label">Container Loading Date</td><td><%= dots(f.CONTAINER_LOADING_DATE) %></td><td class="label">QC Inspector</td><td><%= dots(f.QC_STAFF) %></td></tr>
+  </table>
+
+  <table class="sign-row">
+    <tr>
+      <td>PREPARED BY<div class="sign-note">(Signature and full name)</div></td>
+      <td>QC MANAGER<div class="sign-note">(Signature and full name)</div></td>
+      <td>OPERATIONS / PURCHASING<div class="sign-note">(Signature and full name)</div></td>
+    </tr>
+  </table>
+  <%- footer() %>
+</div>
+
+<!-- Hàng xuất: mỗi đợt QC = 1 trang, 6 hạng mục xếp 3 cột x 2 hàng -->
+<% if (!isImport) { sessions.forEach(function (sess) { %>
+<div class="page">
+  <%- header() %>
+  <div class="title"><h1>QC INSPECTION PROCESS REPORT</h1></div>
+  <table class="qc-head">
+    <tr><td class="label">QC Date</td><td><%= dots(sess.QC_DATE) %></td><td class="label">QC Inspector</td><td><%= dots(sess.QC_STAFF || f.QC_STAFF) %></td></tr>
+  </table>
+  <br>
+  <table class="photo-grid">
+    <% for (let r = 0; r < 2; r++) { %>
+      <tr><%- photoCell((sess.items || [])[r * 3], '33.33%') %><%- photoCell((sess.items || [])[r * 3 + 1], '33.33%') %><%- photoCell((sess.items || [])[r * 3 + 2], '33.33%') %></tr>
+    <% } %>
+  </table>
+  <%- footer() %>
+</div>
+<% }) } %>
+
+<!-- Ảnh container: 3 cột x 3 hàng, 9 ảnh mỗi trang -->
+<% ctnChunks.forEach(function (grp) { %>
+<div class="page">
+  <%- header() %>
+  <div class="title"><h1>CONTAINER LOADING AND DELIVERY PHOTOS</h1></div>
+  <div class="note">(Keep original photos clearly showing the time, container number, seal number and lot number)</div>
+  <table class="photo-grid">
+    <% for (let r = 0; r < 3; r++) { %>
+      <tr><%- photoCell(grp[r * 3], '33.33%') %><%- photoCell(grp[r * 3 + 1], '33.33%') %><%- photoCell(grp[r * 3 + 2], '33.33%') %></tr>
+    <% } %>
+  </table>
+  <%- footer() %>
+</div>
+<% }) %>
+
+<!-- Hàng nhập: mỗi mẫu QC = 1 trang, 4 ảnh xếp 2x2 -->
+<% samples.forEach(function (sm) { %>
+<div class="page sample">
+  <%- header() %>
+  <div class="title"><h1>SAMPLE <%= sm.SAMPLE_NO %> - QUALITY INSPECTION</h1></div>
+  <table class="photo-grid">
+    <tr><%- sampleCell((sm.PHOTOS || [])[0], 1) %><%- sampleCell((sm.PHOTOS || [])[1], 2) %></tr>
+    <tr><%- sampleCell((sm.PHOTOS || [])[2], 3) %><%- sampleCell((sm.PHOTOS || [])[3], 4) %></tr>
+  </table>
+  <%- footer() %>
+</div>
+<% }) %>
+</body>
+</html>

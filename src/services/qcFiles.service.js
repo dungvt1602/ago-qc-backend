@@ -48,6 +48,7 @@ export async function createQCFile(p) {
     seal_no: p.sealNo || '',
     container_loading_date: p.containerLoadingDate || '',
     qc_staff: p.qcStaff || '',
+    customer: p.customer || '',
     status: 'DRAFT',
     qc_type: (p.qcType === 'EXPORT') ? 'EXPORT' : 'IMPORT',
   });
@@ -131,6 +132,7 @@ const FIELD_MAP = {
   contractNo: 'contract_no', poNo: 'po_no', productionOrder: 'production_order',
   standardAppendix: 'standard_appendix', productName: 'product_name', specification: 'specification',
   supplier: 'supplier', supplierCode: 'supplier_code', poQuantity: 'po_quantity', unit: 'unit',
+  customer: 'customer',
   startDate: 'start_date', estFinishDate: 'est_finish_date', containerNo: 'container_no',
   sealNo: 'seal_no', containerLoadingDate: 'container_loading_date', qcStaff: 'qc_staff', status: 'status',
 };

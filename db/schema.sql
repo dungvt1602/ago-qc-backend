@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS qc_files (
   est_finish_date        DATE,
   total_production_days  INT  DEFAULT 0,
   total_warehouses       INT  DEFAULT 0,
+  customer               TEXT,   -- khách hàng, chỉ in trên bản PDF tiếng Anh
   container_no           TEXT,
   seal_no                TEXT,
   container_loading_date DATE,

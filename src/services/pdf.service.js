@@ -4,7 +4,7 @@ import { getQCFile } from './qcFiles.service.js';
 import { downloadAsDataUrl, uploadBuffer } from '../lib/storage.js';
 import { renderPdf } from '../pdf/generate.js';
 import { config } from '../config/env.js';
-import { DAILY_ITEMS } from '../data/catalog.js';
+import { DAILY_ITEMS, CONTAINER_ITEMS } from '../data/catalog.js';
 import { query } from '../lib/db.js';
 import { chunk, sanitizeFileName } from '../lib/util.js';
 
@@ -45,13 +45,26 @@ export async function exportPDF(qcFileId, variant = 'internal') {
     })
   );
 
-  // Gắn nhãn ảnh cho từng hạng mục QC ngày.
+  // Gắn nhãn ảnh + chữ TIẾNG ANH (bản khách hàng) cho từng hạng mục QC.
+  // Lấy từ danh mục chứ không lấy từ DB: bản ghi cũ lưu chữ tiếng Anh cũ, danh mục mới là bản chuẩn.
   data.dailySessions.forEach((s) =>
     s.items.forEach((it) => {
       const def = DAILY_ITEMS.find((d) => d.code === it.ITEM_CODE);
       it.photoLabel = def ? def.photoLabel : '';
+      it.EN_TITLE = def ? (def.enFull || def.en) : it.ITEM_NAME_EN;
+      it.EN_DESC = def ? (def.descEn || '') : '';
     })
   );
+
+  const isImportFile = data.qcFile.QC_TYPE === 'IMPORT';
+  data.containerItems.forEach((it, idx) => {
+    const def = CONTAINER_ITEMS.find((c) => c.no === Number(it.PHOTO_NO));
+    let title = def ? (def.enFull || def.en) : it.ITEM_NAME_EN;
+    // Hàng nhập chỉ dùng ảnh 13-21 nhưng hiển thị lại là 1-9 -> đánh số lại trong tiêu đề.
+    if (isImportFile) title = String(title).replace(/^(PHOTO\s*)\d+/i, `$1${idx + 1}`);
+    it.EN_TITLE = title;
+    it.EN_DESC = def ? (def.descEn || '') : '';
+  });
 
   // Chia ảnh container thành các trang 9 ảnh, tính tổng số trang.
   data.containerChunks = chunk(data.containerItems, 9);
@@ -59,12 +72,11 @@ export async function exportPDF(qcFileId, variant = 'internal') {
   // Hàng nhập: đưa ảnh container lên TRƯỚC phần QC ngày trong PDF.
   data.containerFirst = data.qcFile.QC_TYPE === 'IMPORT';
 
-  // Ngôn ngữ bản in: 'en' -> bản thuần tiếng Anh (bỏ vế tiếng Việt ở các nhãn cố định).
+  // 2 khuôn: bản NỘI BỘ song ngữ (theo loại hồ sơ) và bản KHÁCH HÀNG tiếng Anh (dùng chung).
   const isEn = variant === 'en';
-  data.lang = isEn ? 'en' : 'vi';
-
-  // Chọn khuôn: hàng nhập -> mẫu báo cáo giám định riêng; hàng xuất -> mẫu chuẩn.
-  const templateFile = data.qcFile.QC_TYPE === 'IMPORT' ? 'template-import.ejs' : 'template.ejs';
+  const templateFile = isEn
+    ? 'template-en.ejs'
+    : (isImportFile ? 'template-import.ejs' : 'template.ejs');
   const pdfBuffer = await renderPdf(data, templateFile);
 
   // Tên file CỐ ĐỊNH theo hồ sơ + ngôn ngữ -> lần xuất sau GHI ĐÈ file cũ (không tích rác).
