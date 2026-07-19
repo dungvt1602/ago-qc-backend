@@ -107,7 +107,7 @@
         rows += '</tr>';
       }
       const note = (ci === d.containerChunks.length - 1)
-        ? `<div class="note" style="margin-top:14px;">Tài liệu này là bộ hồ sơ QC của một lô hàng. This document is the QC record for one lot.</div>`
+        ? `<div class="note" style="margin-top:14px;">Tài liệu này là bộ hồ sơ QC của một lô hàng. <span class="en">This document is the QC record for one lot.</span></div>`
         : '';
       out += `<div class="page">${header()}<div class="title"><h1>${ctnVi}</h1><h2>${ctnEn}</h2></div><table class="photo-grid">${rows}</table>${note}${footer()}</div>`;
     });

@@ -59,22 +59,22 @@ export async function exportPDF(qcFileId, variant = 'internal') {
   // Hàng nhập: đưa ảnh container lên TRƯỚC phần QC ngày trong PDF.
   data.containerFirst = data.qcFile.QC_TYPE === 'IMPORT';
 
-  // Chọn khuôn: hàng nhập -> mẫu báo cáo giám định riêng; hàng xuất -> mẫu cũ (nội bộ/khách hàng).
-  const isCustomer = variant === 'customer';
-  const templateFile = data.qcFile.QC_TYPE === 'IMPORT'
-    ? 'template-import.ejs'
-    : (isCustomer ? 'template-customer.ejs' : 'template.ejs');
+  // Ngôn ngữ bản in: 'en' -> bản thuần tiếng Anh (bỏ vế tiếng Việt ở các nhãn cố định).
+  const isEn = variant === 'en';
+  data.lang = isEn ? 'en' : 'vi';
+
+  // Chọn khuôn: hàng nhập -> mẫu báo cáo giám định riêng; hàng xuất -> mẫu chuẩn.
+  const templateFile = data.qcFile.QC_TYPE === 'IMPORT' ? 'template-import.ejs' : 'template.ejs';
   const pdfBuffer = await renderPdf(data, templateFile);
 
-  // Tên file CỐ ĐỊNH theo hồ sơ + loại bản -> lần xuất sau GHI ĐÈ file cũ (không tích rác).
+  // Tên file CỐ ĐỊNH theo hồ sơ + ngôn ngữ -> lần xuất sau GHI ĐÈ file cũ (không tích rác).
   const name = sanitizeFileName(data.qcFile.LOT_CODE || data.qcFile.QC_FILE_NO || 'AGO_QC');
-  const suffix = isCustomer ? '_KhachHang' : '_NoiBo';
-  const filePath = `${qcFileId}/${name}${suffix}.pdf`;
+  const filePath = `${qcFileId}/${name}${isEn ? '_EN' : '_VN'}.pdf`;
   const uploaded = await uploadBuffer(config.pdfBucket, filePath, pdfBuffer, 'application/pdf');
 
   // Thêm ?t= để trình duyệt/CDN luôn lấy bản mới (file bị ghi đè nhưng URL gốc không đổi).
   const freshUrl = `${uploaded.url}?t=${Date.now()}`;
-  const urlColumn = isCustomer ? 'pdf_url_customer' : 'pdf_url';
+  const urlColumn = isEn ? 'pdf_url_en' : 'pdf_url';
   await qcFilesRepo.update(qcFileId, { status: 'EXPORTED', [urlColumn]: freshUrl });
   return getQCFile(qcFileId);
 }

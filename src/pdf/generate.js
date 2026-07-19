@@ -2,6 +2,7 @@
 // TỐI ƯU: mở trình duyệt MỘT lần rồi tái dùng cho các lần xuất sau (tránh ~1s khởi động mỗi lần).
 import puppeteer from 'puppeteer';
 import ejs from 'ejs';
+import { toEnglish } from './i18n.js';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,7 +40,9 @@ async function getBrowser() {
 export async function renderPdf(data, templateFile = 'template.ejs') {
   data.logoUrl = await getLogoDataUrl();
   const template = await fs.readFile(path.join(__dirname, templateFile), 'utf8');
-  const html = ejs.render(template, { d: data });
+  let html = ejs.render(template, { d: data });
+  // Bản tiếng Anh: bỏ vế tiếng Việt ở các nhãn cố định (xem pdf/i18n.js).
+  if (data.lang === 'en') html = toEnglish(html);
 
   const browser = await getBrowser();
   const page = await browser.newPage();
