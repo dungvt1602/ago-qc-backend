@@ -52,7 +52,6 @@ export async function exportPDF(qcFileId, variant = 'internal') {
       const def = DAILY_ITEMS.find((d) => d.code === it.ITEM_CODE);
       it.photoLabel = def ? def.photoLabel : '';
       it.EN_TITLE = def ? (def.enFull || def.en) : it.ITEM_NAME_EN;
-      it.EN_DESC = def ? (def.descEn || '') : '';
     })
   );
 
@@ -63,7 +62,6 @@ export async function exportPDF(qcFileId, variant = 'internal') {
     // Hàng nhập chỉ dùng ảnh 13-21 nhưng hiển thị lại là 1-9 -> đánh số lại trong tiêu đề.
     if (isImportFile) title = String(title).replace(/^(PHOTO\s*)\d+/i, `$1${idx + 1}`);
     it.EN_TITLE = title;
-    it.EN_DESC = def ? (def.descEn || '') : '';
   });
 
   // Chia ảnh container thành các trang 9 ảnh, tính tổng số trang.

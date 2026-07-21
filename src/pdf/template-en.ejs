@@ -25,9 +25,12 @@
     .qc-head td { height:22px; }
     .photo-grid td { padding:0; vertical-align:top; }
     .box-title { color:#3f7f25; font-weight:700; text-align:center; min-height:26px; padding:5px 4px; border-bottom:1px solid #5d8d3e; text-transform:uppercase; font-size:9px; }
-    .photo-wrap { height:150px; display:flex; align-items:center; justify-content:center; padding:4px; }
-    .photo-wrap img { max-width:100%; max-height:145px; object-fit:contain; }
-    .photo-desc { text-align:center; padding:5px 6px; min-height:30px; border-top:1px solid #5d8d3e; color:#444; font-size:9px; }
+    /* Bản khách hàng: chỉ có ảnh, không có dòng mô tả -> ảnh chiếm hết chỗ trống của trang.
+       Chiều cao khác nhau vì số hàng ảnh mỗi trang khác nhau (container 3 hàng, QC ngày 2 hàng). */
+    .photo-wrap { height:260px; display:flex; align-items:center; justify-content:center; padding:4px; }
+    .photo-wrap img { max-width:100%; max-height:255px; object-fit:contain; }
+    .daily .photo-wrap { height:400px; }
+    .daily .photo-wrap img { max-height:395px; }
     .placeholder { color:#999; font-style:italic; }
     .note { font-size:9px; color:#666; font-style:italic; margin:4px 0 8px; text-align:center; }
     .footer { position:absolute; left:0; right:0; bottom:0; border-top:1px solid #3f7f25; padding-top:4px; color:#777; font-style:italic; display:flex; justify-content:space-between; font-size:9px; }
@@ -80,7 +83,6 @@
     return `<td style="width:${width}">
         <div class="box-title">${v(item.EN_TITLE || item.ITEM_NAME_EN)}</div>
         <div class="photo-wrap">${img}</div>
-        <div class="photo-desc">${v(item.EN_DESC)}</div>
       </td>`;
   }
 
@@ -131,7 +133,7 @@
 
 <!-- Hàng xuất: mỗi đợt QC = 1 trang, 6 hạng mục xếp 3 cột x 2 hàng -->
 <% if (!isImport) { sessions.forEach(function (sess) { %>
-<div class="page">
+<div class="page daily">
   <%- header() %>
   <div class="title"><h1>QC INSPECTION PROCESS REPORT</h1></div>
   <table class="qc-head">
