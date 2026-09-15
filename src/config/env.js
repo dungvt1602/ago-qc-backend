@@ -19,4 +19,9 @@ export const config = {
   pdfBucket: process.env.PDF_BUCKET || 'qc-pdfs',
   corsOrigin: (process.env.CORS_ORIGIN || '*').split(',').map((s) => s.trim()),
   apiSecret: process.env.API_SECRET || '',
+
+  // gRPC cho backend checklist gọi sang (mạng riêng Render). Khóa để TRỐNG = không bật gRPC,
+  // tránh vô tình mở một cổng không xác thực.
+  grpcPort: Number(process.env.QC_GRPC_PORT) || 50051,
+  qcAppApiKey: process.env.QC_APP_API_KEY || '',
 };

@@ -1,0 +1,43 @@
+// Hợp đồng gRPC giữa backend checklist (Go, CLIENT) và App QC (Node, SERVER).
+// Bản gốc do đội checklist quản. App QC thêm CreateQC để checklist tạo hồ sơ QC
+// ngay khi đơn vào bước Sản xuất (kèm order_id) — nhờ đó hai bên khớp nhau từ đầu.
+//
+// QUY TẮC: không đổi/dùng lại số thứ tự trường (= 1, = 2 ...). Thêm trường thì dùng số mới.
+syntax = "proto3";
+package ago.qc.v1;
+option go_package = "github.com/ago/ago-backend-checklist/internal/qcpb;qcpb";
+
+service QCService {
+  // Checklist hỏi: đơn này QC tới đâu rồi? Dùng để chặn "Sản xuất xong" khi chưa QC.
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+
+  // Checklist tạo hồ sơ QC (hàng xuất) cho đơn, điền sẵn thông tin cơ bản.
+  // IDEMPOTENT: gọi lại với cùng order_id -> trả hồ sơ đã có, created = false. Không bao giờ tạo trùng.
+  rpc CreateQC(CreateQCRequest) returns (CreateQCResponse);
+}
+
+message GetStatusRequest {
+  int64 order_id = 1;
+}
+
+message GetStatusResponse {
+  int32 photo_count = 1;  // tổng ảnh đã chụp (QC ngày + container + mẫu). Chưa có gì -> 0
+  bool  done        = 2;  // QC đã bấm "Hoàn tất QC". Chưa xong / chưa có hồ sơ -> false
+}
+
+message CreateQCRequest {
+  int64  order_id      = 1;  // bắt buộc, > 0
+  string po_no         = 2;
+  string product_name  = 3;
+  string specification = 4;
+  string quantity      = 5;
+  string unit          = 6;
+  string customer      = 7;
+  string contract_no   = 8;
+}
+
+message CreateQCResponse {
+  string qc_file_id = 1;  // UUID hồ sơ bên App QC
+  string lot_code   = 2;  // mã lô, vd QC-AGO2609-20260915
+  bool   created    = 3;  // true = vừa tạo mới; false = đã có từ trước (gọi lại)
+}

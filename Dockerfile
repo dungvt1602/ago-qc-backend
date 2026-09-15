@@ -25,6 +25,7 @@ RUN npm ci --omit=dev
 COPY . .
 
 # Render/host sẽ cấp biến PORT; server đọc từ env, mặc định 8080.
-EXPOSE 8080
+# 50051 = gRPC cho backend checklist, chỉ đi qua mạng riêng Render (không public).
+EXPOSE 8080 50051
 
 CMD ["node", "src/server.js"]

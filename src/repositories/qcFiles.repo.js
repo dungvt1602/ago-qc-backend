@@ -10,7 +10,8 @@ const SELECT_FILE = `
     to_char(est_finish_date, 'YYYY-MM-DD') AS est_finish_date,
     total_production_days, total_warehouses, customer, container_no, seal_no,
     to_char(container_loading_date, 'YYYY-MM-DD') AS container_loading_date,
-    qc_staff, status, pdf_url, pdf_url_en,
+    qc_staff, status, pdf_url, pdf_url_en, order_id,
+    to_char(qc_done_at, 'YYYY-MM-DD HH24:MI:SS') AS qc_done_at,
     to_char(created_at, 'YYYY-MM-DD HH24:MI:SS') AS created_at,
     to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') AS updated_at
   FROM qc_files`;
@@ -44,17 +45,17 @@ export async function insert(data) {
        qc_file_no, lot_code, contract_no, po_no, production_order, standard_appendix,
        product_name, specification, supplier, supplier_code, po_quantity, unit,
        start_date, est_finish_date, container_no, seal_no, container_loading_date,
-       qc_staff, status, qc_type, customer
+       qc_staff, status, qc_type, customer, order_id
      ) VALUES (
        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
-       NULLIF($13,'')::date, NULLIF($14,'')::date, $15,$16, NULLIF($17,'')::date, $18,$19,$20,$21
+       NULLIF($13,'')::date, NULLIF($14,'')::date, $15,$16, NULLIF($17,'')::date, $18,$19,$20,$21,$22
      ) RETURNING id`,
     [
       data.qc_file_no, data.lot_code, data.contract_no, data.po_no, data.production_order,
       data.standard_appendix, data.product_name, data.specification, data.supplier,
       data.supplier_code, data.po_quantity, data.unit, data.start_date, data.est_finish_date,
       data.container_no, data.seal_no, data.container_loading_date, data.qc_staff, data.status,
-      data.qc_type, data.customer,
+      data.qc_type, data.customer, data.order_id ?? null,
     ]
   );
   return row.id;
@@ -110,4 +111,31 @@ export async function updateCounts(id) {
 // Xóa hồ sơ QC (CASCADE tự xóa summary / daily / items / container).
 export function remove(id) {
   return query('DELETE FROM qc_files WHERE id = $1', [id]);
+}
+
+// ===== Tích hợp checklist (gRPC) =====
+
+export function findByOrderId(orderId) {
+  return queryOne(SELECT_FILE + ' WHERE order_id = $1', [orderId]);
+}
+
+// Trạng thái QC của 1 đơn, gói trong MỘT câu SQL để gRPC trả lời nhanh (< 3s deadline của checklist).
+// photo_count = ảnh QC ngày + ảnh container + ảnh trong các mẫu (JSONB, chỉ đếm phần tử là object thật).
+// Trả null nếu đơn chưa có hồ sơ.
+export function getOrderStatus(orderId) {
+  return queryOne(
+    `SELECT f.id,
+            (f.qc_done_at IS NOT NULL) AS done,
+            (SELECT count(*) FROM daily_qc_items d
+               WHERE d.qc_file_id = f.id AND COALESCE(d.photo_path, '') <> '')
+          + (SELECT count(*) FROM container_photos c
+               WHERE c.qc_file_id = f.id AND COALESCE(c.photo_path, '') <> '')
+          + (SELECT count(*) FROM qc_samples s
+               CROSS JOIN LATERAL jsonb_array_elements(COALESCE(s.photos, '[]'::jsonb)) p
+               WHERE s.qc_file_id = f.id AND jsonb_typeof(p) = 'object')
+            AS photo_count
+     FROM qc_files f
+     WHERE f.order_id = $1`,
+    [orderId]
+  );
 }

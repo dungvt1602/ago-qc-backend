@@ -51,9 +51,31 @@ export async function createQCFile(p) {
     customer: p.customer || '',
     status: 'DRAFT',
     qc_type: (p.qcType === 'EXPORT') ? 'EXPORT' : 'IMPORT',
+    order_id: p.orderId ? Number(p.orderId) : null,
   });
   await repo.insertSummary(id);
   return getQCFile(id);
+}
+
+// Backend checklist gọi (qua gRPC) khi đơn vào bước Sản xuất: tạo hồ sơ QC hàng xuất cho đơn.
+// IDEMPOTENT: cùng order_id gọi bao nhiêu lần cũng trả về đúng 1 hồ sơ, không tạo trùng.
+// Trả { qcFile, created }. created=false = hồ sơ đã có sẵn từ trước.
+export async function findOrCreateForOrder(p) {
+  const orderId = Number(p.orderId);
+  const existing = await repo.findByOrderId(orderId);
+  if (existing) return { qcFile: upperKeys(existing), created: false };
+
+  try {
+    const data = await createQCFile({ ...p, orderId, qcType: 'EXPORT' });
+    return { qcFile: data.qcFile, created: true };
+  } catch (err) {
+    // 2 lệnh tạo tới cùng lúc: lệnh sau đụng ràng buộc UNIQUE -> lấy hồ sơ lệnh trước vừa tạo.
+    if (err && err.code === '23505') {
+      const row = await repo.findByOrderId(orderId);
+      if (row) return { qcFile: upperKeys(row), created: false };
+    }
+    throw err;
+  }
 }
 
 // Đọc 1 hồ sơ đầy đủ. Đây là hàm trung tâm — hầu hết thao tác kết thúc bằng việc gọi nó.

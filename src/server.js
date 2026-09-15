@@ -4,6 +4,7 @@ import cors from 'cors';
 import { config } from './config/env.js';
 import apiRouter from './routes/api.js';
 import { closeBrowser } from './pdf/generate.js';
+import { startGrpc, stopGrpc } from './grpc/server.js';
 
 const app = express();
 
@@ -28,14 +29,21 @@ app.use((err, req, res, next) => {
   res.status(500).json({ ok: false, error: String(err && err.message ? err.message : err) });
 });
 
-const server = app.listen(config.port, () => {
+// Bật HTTP TRƯỚC, gRPC SAU: Render lấy cổng mở đầu tiên làm cổng web công khai.
+let grpcServer = null;
+const server = app.listen(config.port, async () => {
   console.log(`AGO QC Backend đang chạy ở http://localhost:${config.port}`);
+  try {
+    grpcServer = await startGrpc();
+  } catch (err) {
+    console.error('[gRPC] Không bật được:', err); // HTTP vẫn chạy bình thường
+  }
 });
 
 // Đóng gọn gàng khi tắt server (Ctrl+C / Render restart).
 async function shutdown() {
   console.log('Đang tắt server...');
-  await closeBrowser();
+  await Promise.all([closeBrowser(), stopGrpc(grpcServer)]);
   server.close(() => process.exit(0));
 }
 process.on('SIGINT', shutdown);

@@ -29,8 +29,14 @@ CREATE TABLE IF NOT EXISTS qc_files (
   status                 TEXT DEFAULT 'DRAFT',
   pdf_url                TEXT,
   pdf_url_en             TEXT,   -- link bản PDF tiếng Anh (pdf_url = bản song ngữ)
+  -- Tích hợp hệ thống checklist (gRPC): ID đơn bên checklist tạo ra hồ sơ này.
+  -- UNIQUE = mỗi đơn đúng 1 hồ sơ. NULL = hồ sơ tạo tay / hàng nhập, không dính đơn nào.
+  order_id               BIGINT,
+  -- Thời điểm QC bấm "Hoàn tất QC". NULL = chưa xong (gRPC GetStatus trả done=false).
+  qc_done_at             TIMESTAMPTZ,
   created_at             TIMESTAMPTZ DEFAULT now(),
-  updated_at             TIMESTAMPTZ DEFAULT now()
+  updated_at             TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT uq_qc_files_order_id UNIQUE (order_id)
 );
 
 -- Thống kê (1-1 với qc_files)
