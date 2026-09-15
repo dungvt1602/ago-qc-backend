@@ -17,7 +17,13 @@ app.use(express.json({ limit: '25mb' }));
 
 // Kiểm tra sức khỏe server.
 app.get('/', (req, res) => {
-  res.json({ ok: true, service: 'AGO QC Backend', time: new Date().toISOString() });
+  const mem = process.memoryUsage();
+  res.json({
+    ok: true, service: 'AGO QC Backend', time: new Date().toISOString(),
+    uptimeSec: Math.round(process.uptime()),           // vừa restart? (Render free hay bị kill)
+    rssMb: Math.round(mem.rss / 1048576),              // RAM Node đang dùng (Render 512MB tổng, kể cả Chrome)
+    grpc: Boolean(config.qcAppApiKey),                 // gRPC có bật không
+  });
 });
 
 // Toàn bộ API ở POST /api
