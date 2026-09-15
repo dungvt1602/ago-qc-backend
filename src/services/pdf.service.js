@@ -2,7 +2,7 @@
 import * as qcFilesRepo from '../repositories/qcFiles.repo.js';
 import { getQCFile } from './qcFiles.service.js';
 import { uploadBuffer } from '../lib/storage.js';
-import { downloadPhotoForPdf, mapLimit } from '../pdf/images.js';
+import { pdfImageUrl } from '../pdf/images.js';
 import { renderPdf } from '../pdf/generate.js';
 import { config } from '../config/env.js';
 import { DAILY_ITEMS, CONTAINER_ITEMS } from '../data/catalog.js';
@@ -30,13 +30,10 @@ export async function exportPDF(qcFileId, variant = 'internal') {
   const samplePhotos = [];
   data.dailySessions.forEach((s) => (s.samples || []).forEach((sm) => (sm.PHOTOS || []).forEach((p) => { if (p && p.path) samplePhotos.push(p); })));
 
-  // Tải + THU NHỎ ảnh (1024px) rồi nhúng base64. Song song nhưng tối đa 4 ảnh/lúc:
-  // mỗi ảnh khi thu nhỏ tốn RAM tạm thời, 33 ảnh cùng lúc trên máy 512MB là quá sức.
-  const fetchPhoto = (path) => downloadPhotoForPdf(config.photoBucket, path).catch(() => ''); // ảnh lỗi -> ô trống, không hỏng cả PDF
-  await Promise.all([
-    mapLimit(photoItems, 4, async (it) => { it.PHOTO_RENDER_URL = await fetchPhoto(it.PHOTO_PATH); }),
-    mapLimit(samplePhotos, 4, async (p) => { p.render = await fetchPhoto(p.path); }),
-  ]);
+  // KHÔNG tải/nhúng ảnh ở đây nữa: chỉ gắn URL nội bộ, Chrome tự lấy từng tấm (đã thu nhỏ 1024px)
+  // khi in tới trang đó. Xem pdf/images.js. Giữ RAM Node ~90MB thay vì phình theo số ảnh.
+  photoItems.forEach((it) => { it.PHOTO_RENDER_URL = pdfImageUrl(it.PHOTO_PATH); });
+  samplePhotos.forEach((p) => { p.render = pdfImageUrl(p.path); });
 
   // Gắn nhãn ảnh + chữ TIẾNG ANH (bản khách hàng) cho từng hạng mục QC.
   // Lấy từ danh mục chứ không lấy từ DB: bản ghi cũ lưu chữ tiếng Anh cũ, danh mục mới là bản chuẩn.

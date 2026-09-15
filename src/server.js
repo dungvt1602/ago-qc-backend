@@ -5,6 +5,7 @@ import { config } from './config/env.js';
 import apiRouter from './routes/api.js';
 import { closeBrowser } from './pdf/generate.js';
 import { startGrpc, stopGrpc } from './grpc/server.js';
+import { pdfImageHandler } from './pdf/images.js';
 
 const app = express();
 
@@ -22,12 +23,17 @@ app.get('/', (req, res) => {
     ok: true, service: 'AGO QC Backend', time: new Date().toISOString(),
     uptimeSec: Math.round(process.uptime()),           // vừa restart? (Render free hay bị kill)
     rssMb: Math.round(mem.rss / 1048576),              // RAM Node đang dùng (Render 512MB tổng, kể cả Chrome)
+    heapMb: Math.round(mem.heapUsed / 1048576),        // phần JS (V8) - dọn được bằng GC
+    nativeMb: Math.round((mem.external + mem.arrayBuffers) / 1048576), // Buffer/ảnh/sharp - ngoài heap
     grpc: Boolean(config.qcAppApiKey),                 // gRPC có bật không
   });
 });
 
 // Toàn bộ API ở POST /api
 app.use('/api', apiRouter);
+
+// Ảnh cho Chrome in PDF — chỉ nhận từ 127.0.0.1 kèm token, bên ngoài gọi sẽ bị 403.
+app.get('/pdf-img', pdfImageHandler);
 
 // Bắt lỗi không lường trước.
 app.use((err, req, res, next) => {
