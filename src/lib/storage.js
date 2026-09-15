@@ -31,12 +31,16 @@ export async function uploadBuffer(bucket, path, buffer, contentType) {
 }
 
 // Tải file từ Storage rồi đổi thành dataURL base64 (để nhúng ảnh vào PDF).
-export async function downloadAsDataUrl(bucket, path) {
+// Tải file về dạng Buffer (bytes thô).
+export async function downloadBuffer(bucket, path) {
   const { data, error } = await supabase.storage.from(bucket).download(path);
   if (error) throw new Error('Tải ảnh thất bại: ' + error.message);
-  const buffer = Buffer.from(await data.arrayBuffer());
-  const mime = data.type || 'image/jpeg';
-  return `data:${mime};base64,${buffer.toString('base64')}`;
+  return Buffer.from(await data.arrayBuffer());
+}
+
+export async function downloadAsDataUrl(bucket, path) {
+  const buffer = await downloadBuffer(bucket, path);
+  return `data:image/jpeg;base64,${buffer.toString('base64')}`;
 }
 
 // Xóa một hoặc nhiều file khỏi Storage (dùng khi xóa ảnh / xóa hồ sơ).

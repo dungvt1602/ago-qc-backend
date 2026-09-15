@@ -1,7 +1,8 @@
 // Logic xuất PDF: gom dữ liệu, tải ảnh SONG SONG, render, upload, lưu link.
 import * as qcFilesRepo from '../repositories/qcFiles.repo.js';
 import { getQCFile } from './qcFiles.service.js';
-import { downloadAsDataUrl, uploadBuffer } from '../lib/storage.js';
+import { uploadBuffer } from '../lib/storage.js';
+import { downloadPhotoForPdf, mapLimit } from '../pdf/images.js';
 import { renderPdf } from '../pdf/generate.js';
 import { config } from '../config/env.js';
 import { DAILY_ITEMS, CONTAINER_ITEMS } from '../data/catalog.js';
@@ -25,25 +26,17 @@ export async function exportPDF(qcFileId, variant = 'internal') {
   data.dailySessions.forEach((s) => s.items.forEach((it) => { if (it.PHOTO_PATH) photoItems.push(it); }));
   data.containerItems.forEach((it) => { if (it.PHOTO_PATH) photoItems.push(it); });
 
-  // TỐI ƯU LỚN NHẤT: tải TẤT CẢ ảnh cùng lúc thay vì lần lượt từng cái.
-  await Promise.all(
-    photoItems.map(async (it) => {
-      try {
-        it.PHOTO_RENDER_URL = await downloadAsDataUrl(config.photoBucket, it.PHOTO_PATH);
-      } catch {
-        it.PHOTO_RENDER_URL = ''; // ảnh lỗi thì hiện ô trống, không làm hỏng cả PDF
-      }
-    })
-  );
-
-  // Tải ảnh của các MẪU (hàng nhập) -> nhúng base64 vào trường render.
+  // Ảnh của các MẪU (hàng nhập) nằm trong JSONB -> gom vào cùng danh sách.
   const samplePhotos = [];
   data.dailySessions.forEach((s) => (s.samples || []).forEach((sm) => (sm.PHOTOS || []).forEach((p) => { if (p && p.path) samplePhotos.push(p); })));
-  await Promise.all(
-    samplePhotos.map(async (p) => {
-      try { p.render = await downloadAsDataUrl(config.photoBucket, p.path); } catch { p.render = ''; }
-    })
-  );
+
+  // Tải + THU NHỎ ảnh (1024px) rồi nhúng base64. Song song nhưng tối đa 4 ảnh/lúc:
+  // mỗi ảnh khi thu nhỏ tốn RAM tạm thời, 33 ảnh cùng lúc trên máy 512MB là quá sức.
+  const fetchPhoto = (path) => downloadPhotoForPdf(config.photoBucket, path).catch(() => ''); // ảnh lỗi -> ô trống, không hỏng cả PDF
+  await Promise.all([
+    mapLimit(photoItems, 4, async (it) => { it.PHOTO_RENDER_URL = await fetchPhoto(it.PHOTO_PATH); }),
+    mapLimit(samplePhotos, 4, async (p) => { p.render = await fetchPhoto(p.path); }),
+  ]);
 
   // Gắn nhãn ảnh + chữ TIẾNG ANH (bản khách hàng) cho từng hạng mục QC.
   // Lấy từ danh mục chứ không lấy từ DB: bản ghi cũ lưu chữ tiếng Anh cũ, danh mục mới là bản chuẩn.

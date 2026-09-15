@@ -8,7 +8,10 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-let browserPromise = null;
+// Chrome KHÔNG chạy thường trực: mỗi lần in mở mới -> in -> đóng ngay để trả RAM
+// (Render 512MB; Chrome ngồi chờ cũng chiếm ~200MB). Đổi lại chậm thêm ~1 giây/lần in.
+let current = null;     // Chrome đang in (để đóng khi tắt server)
+let queue = Promise.resolve(); // in TUẦN TỰ: 2 người bấm cùng lúc thì xếp hàng, không mở 2 Chrome
 
 // Đọc logo.png một lần, chuyển thành data URL base64 để nhúng thẳng vào PDF
 // (không phụ thuộc mạng). Nếu không có file -> trả '' và template tự dùng logo chữ.
@@ -31,22 +34,6 @@ const CHROME_ARGS = [
   '--disable-default-apps', '--disable-sync', '--no-first-run', '--mute-audio',
 ];
 
-async function getBrowser() {
-  // Tái dùng Chrome đang sống. Nếu Chrome đã chết (hết RAM / bị kill) thì BỎ xác cũ, mở lại —
-  // trước đây giữ mãi tham chiếu cũ nên mọi lần xuất sau đều lỗi "Connection closed" tới khi restart.
-  if (browserPromise) {
-    const alive = await browserPromise.catch(() => null);
-    if (alive && alive.connected) return alive;
-    browserPromise = null;
-    console.warn('[PDF] Chrome ngầm đã chết, mở lại...');
-  }
-  const launching = puppeteer.launch({ headless: true, args: CHROME_ARGS });
-  browserPromise = launching;
-  const browser = await launching;
-  browser.once('disconnected', () => { if (browserPromise === launching) browserPromise = null; });
-  return browser;
-}
-
 const isBrowserGone = (err) => /Connection closed|Target closed|Session closed|browser has disconnected/i.test(String(err && err.message));
 
 // data: object đã chuẩn bị sẵn (qcFile, summary, settings, dailySessions, containerChunks, totalPages...).
@@ -56,21 +43,26 @@ export async function renderPdf(data, templateFile = 'template.ejs') {
   const template = await fs.readFile(path.join(__dirname, templateFile), 'utf8');
   const html = ejs.render(template, { d: data });
 
-  // Thử lại đúng 1 lần nếu Chrome chết giữa chừng (getBrowser sẽ mở Chrome mới ở lần 2).
-  try {
-    return await printHtml(html);
-  } catch (err) {
-    if (!isBrowserGone(err)) throw err;
-    console.warn('[PDF] Chrome chết giữa chừng, thử lại 1 lần...');
-    browserPromise = null;
-    return await printHtml(html);
-  }
+  // Xếp hàng: lần in này chỉ bắt đầu khi lần trước xong (kể cả lần trước lỗi).
+  const run = queue.then(async () => {
+    try {
+      return await printHtml(html);
+    } catch (err) {
+      if (!isBrowserGone(err)) throw err;
+      console.warn('[PDF] Chrome chết giữa lúc in (thiếu RAM?), thử lại 1 lần...');
+      return await printHtml(html);
+    }
+  });
+  queue = run.catch(() => {});
+  return run;
 }
 
+// Mở Chrome -> in -> ĐÓNG. Không giữ lại gì sau khi xong.
 async function printHtml(html) {
-  const browser = await getBrowser();
-  const page = await browser.newPage();
+  const browser = await puppeteer.launch({ headless: true, args: CHROME_ARGS });
+  current = browser;
   try {
+    const page = await browser.newPage();
     // Ảnh đã được nhúng sẵn dạng dataURL nên 'load' là đủ, không cần chờ mạng.
     await page.setContent(html, { waitUntil: 'load' });
     return await page.pdf({
@@ -78,15 +70,12 @@ async function printHtml(html) {
       preferCSSPageSize: true, // tôn trọng @page { size:A4; margin } trong template
     });
   } finally {
-    await page.close().catch(() => {}); // Chrome đã chết thì close cũng lỗi, bỏ qua
+    current = null;
+    await browser.close().catch(() => {}); // Chrome đã chết thì close cũng lỗi, bỏ qua
   }
 }
 
-// Đóng trình duyệt khi tắt server (gọi từ server.js).
+// Đóng Chrome đang in dở (nếu có) khi tắt server (gọi từ server.js).
 export async function closeBrowser() {
-  if (browserPromise) {
-    const browser = await browserPromise;
-    await browser.close();
-    browserPromise = null;
-  }
+  if (current) await current.close().catch(() => {});
 }
