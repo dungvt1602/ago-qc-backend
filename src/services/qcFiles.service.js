@@ -8,6 +8,7 @@ import { upperKeys } from '../lib/rows.js';
 import { todayStr, dateCompact, sanitizeCode } from '../lib/util.js';
 import { removeFiles, removeFolder } from '../lib/storage.js';
 import { config } from '../config/env.js';
+import { photoProgress } from '../lib/progress.js';
 
 // Trả về danh mục cố định (frontend hiện chưa dùng, giữ cho đủ "hợp đồng" cũ).
 export function setupInfo() {
@@ -129,7 +130,9 @@ export async function getQCFile(id) {
     return item;
   });
 
-  return { qcFile, summary, dailySessions, containerItems, dailyItemDefs: DAILY_ITEMS };
+  const data = { qcFile, summary, dailySessions, containerItems, dailyItemDefs: DAILY_ITEMS };
+  data.progress = photoProgress(data); // tiến độ ảnh: frontend hiện thanh x/y + bật/tắt nút Hoàn tất
+  return data;
 }
 
 function emptyDailyItem(def, session) {

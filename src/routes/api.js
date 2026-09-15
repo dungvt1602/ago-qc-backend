@@ -8,8 +8,17 @@ import * as container from '../services/container.service.js';
 import * as photos from '../services/photos.service.js';
 import * as pdf from '../services/pdf.service.js';
 import * as samples from '../services/samples.service.js';
+import * as completion from '../services/completion.service.js';
 
 const router = express.Router();
+
+// Các action làm THAY ĐỔI hồ sơ -> bị chặn khi hồ sơ đã Hoàn tất QC (xem completion.service.js).
+// exportPDF, getQCFile, reopenQC... không nằm trong danh sách này.
+const LOCKED_WHEN_DONE = new Set([
+  'updateQCFile', 'updateSummary', 'addDailyQC', 'saveDailyQCItem', 'saveContainerItem',
+  'uploadPhoto', 'deleteQCFile', 'updateDailyQC', 'deleteDailyQC', 'deletePhoto',
+  'addSample', 'deleteSample',
+]);
 
 // Bảng tra: action -> hàm xử lý. payload đã được tách sẵn.
 const handlers = {
@@ -30,6 +39,8 @@ const handlers = {
   deletePhoto: (p) => photos.deletePhoto(p),
   addSample: (p) => samples.addSample(p),
   deleteSample: (p) => samples.deleteSample(p),
+  completeQC: (p) => completion.completeQC(p),
+  reopenQC: (p) => completion.reopenQC(p),
 };
 
 router.post('/', async (req, res) => {
@@ -42,6 +53,7 @@ router.post('/', async (req, res) => {
     const handler = handlers[action];
     if (!handler) throw new Error('Action không hợp lệ: ' + action);
 
+    if (LOCKED_WHEN_DONE.has(action)) await completion.assertEditable(payload);
     const result = await handler(payload);
     res.json({ ok: true, result });
   } catch (err) {
