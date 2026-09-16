@@ -160,7 +160,7 @@ Checklist                          App QC
 | Trường | App QC trả gì |
 |---|---|
 | `photo_total` | Tổng ô ảnh của hồ sơ. Hàng xuất = 6 × số đợt QC + 21; hàng nhập = 4 × số mẫu + 9. Chưa có hồ sơ → 0. Luôn `photo_count ≤ photo_total`. |
-| `file_url` | `https://ago-qc.netlify.app/?file=<uuid>` — mở thẳng hồ sơ, **không cần đăng nhập** (App QC chưa có đăng nhập). Hồ sơ đã bị xóa → app tự về danh sách. Chưa có hồ sơ → `""`. |
+| `file_url` | `https://ago-qc.netlify.app/qc/<uuid>` — mở thẳng hồ sơ, **không cần đăng nhập** (App QC chưa có đăng nhập). Hồ sơ đã bị xóa → app tự về danh sách. Chưa có hồ sơ → `""`. |
 | `done_at` | Unix **ms** lúc bấm "Hoàn tất QC". Chưa xong / đã "Mở lại" → `0`. |
 | `done_by` | Tên người bấm Hoàn tất (app hỏi tên lúc bấm, điền sẵn Nhân viên QC). Chưa xong / đã "Mở lại" → `""`. |
 | `groups` | Hàng xuất: `[QC ngày, Container]`; hàng nhập: `[Container, Mẫu]`. Tính trong **cùng một vòng đếm** với `photo_count`/`photo_total` nên `sum(count)` và `sum(total)` **luôn khớp**. Chưa có hồ sơ → `[]`. |
@@ -173,7 +173,7 @@ Kết quả `grpcurl` mong đợi (hàng xuất, 1 đợt, đã hoàn tất):
 ```json
 {
   "photoCount": 27, "done": true, "photoTotal": 27,
-  "fileUrl": "https://ago-qc.netlify.app/?file=3f2a…",
+  "fileUrl": "https://ago-qc.netlify.app/qc/3f2a…",
   "doneAt": "1789542123456", "doneBy": "Trần Thị B",
   "groups": [ { "name": "QC ngày", "count": 6, "total": 6 }, { "name": "Container", "count": 21, "total": 21 } ]
 }

@@ -67,7 +67,7 @@ async function getStatus(orderId) {
     photoCount: p.filled,
     done,
     photoTotal: p.total,
-    fileUrl: `${config.qcAppUrl}/?file=${encodeURIComponent(id)}`,
+    fileUrl: `${config.qcAppUrl}/qc/${encodeURIComponent(id)}`, // route Next.js /qc/[id]
     doneAt: done ? Number(f.QC_DONE_AT_MS) || 0 : 0,
     doneBy: done ? (f.QC_DONE_BY || '') : '',
     groups: p.groups.map((g) => ({ name: g.name, count: g.count, total: g.total })),
