@@ -38,6 +38,17 @@ export async function downloadBuffer(bucket, path) {
   return Buffer.from(await data.arrayBuffer());
 }
 
+// Tải file qua URL PUBLIC (đi qua CDN — nhanh hơn Storage API vài lần, nhất là file đã được app xem qua).
+// Bucket không public / CDN trả lỗi -> tự quay về Storage API (downloadBuffer).
+export async function downloadPublicBuffer(bucket, path) {
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  try {
+    const res = await fetch(data.publicUrl);
+    if (res.ok) return Buffer.from(await res.arrayBuffer());
+  } catch (e) { /* lỗi mạng -> thử Storage API */ }
+  return downloadBuffer(bucket, path);
+}
+
 export async function downloadAsDataUrl(bucket, path) {
   const buffer = await downloadBuffer(bucket, path);
   return `data:image/jpeg;base64,${buffer.toString('base64')}`;
