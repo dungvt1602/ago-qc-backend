@@ -1,11 +1,11 @@
 {
   "name": "ago-qc-backend",
   "version": "1.0.0",
-  "description": "Backend AGO QC App - Node.js + Express + PostgreSQL (Supabase) + Puppeteer",
+  "description": "Backend AGO QC App - Node.js + Express + PostgreSQL (Supabase) + pdfmake",
   "type": "module",
   "main": "src/server.js",
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "scripts": {
     "start": "node src/server.js",
@@ -17,10 +17,8 @@
     "@supabase/supabase-js": "^2.45.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "ejs": "^3.1.10",
     "express": "^4.19.2",
-    "pdf-lib": "^1.17.1",
-    "pg": "^8.12.0",
-    "puppeteer": "^23.3.0"
+    "pdfmake": "^0.3.11",
+    "pg": "^8.12.0"
   }
 }
