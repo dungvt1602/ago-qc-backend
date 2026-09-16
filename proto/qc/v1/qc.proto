@@ -23,17 +23,31 @@ message GetStatusRequest {
 message GetStatusResponse {
   int32 photo_count = 1;  // tổng ảnh đã chụp (QC ngày + container + mẫu). Chưa có gì -> 0
   bool  done        = 2;  // QC đã bấm "Hoàn tất QC". Chưa xong / chưa có hồ sơ -> false
+
+  // --- Đợt 2 (16/09/2026): để checklist hiện đủ tiến độ ---
+  int32  photo_total = 3;  // tổng ô ảnh cần chụp của hồ sơ. Chưa có hồ sơ -> 0
+  string file_url    = 4;  // URL mở THẲNG hồ sơ trên App QC (không cần đăng nhập). Chưa có hồ sơ -> ""
+  int64  done_at     = 5;  // lúc bấm "Hoàn tất QC", unix ms. Chưa xong -> 0
+  string done_by     = 6;  // tên người bấm Hoàn tất. Chưa xong -> ""
+  repeated PhotoGroup groups = 7;  // tiến độ theo nhóm; sum(count)==photo_count, sum(total)==photo_total
+}
+
+message PhotoGroup {
+  string name  = 1;  // nhãn hiển thị: "QC ngày" | "Container" | "Mẫu"
+  int32  count = 2;  // đã chụp
+  int32  total = 3;  // cần chụp
 }
 
 message CreateQCRequest {
-  int64  order_id      = 1;  // bắt buộc, > 0
-  string po_no         = 2;
-  string product_name  = 3;
-  string specification = 4;
-  string quantity      = 5;
-  string unit          = 6;
-  string customer      = 7;
-  string contract_no   = 8;
+  int64  order_id        = 1;  // bắt buộc, > 0
+  string po_no           = 2;
+  string product_name    = 3;
+  string specification   = 4;
+  string quantity        = 5;
+  string unit            = 6;
+  string customer        = 7;
+  string contract_no     = 8;
+  string created_by_name = 9;  // tên người bấm "Tạo đơn QC" bên checklist -> hiện là người mở hồ sơ
 }
 
 message CreateQCResponse {

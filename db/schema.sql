@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS qc_files (
   order_id               BIGINT,
   -- Thời điểm QC bấm "Hoàn tất QC". NULL = chưa xong (gRPC GetStatus trả done=false).
   qc_done_at             TIMESTAMPTZ,
+  qc_done_by             TEXT,   -- tên người bấm Hoàn tất (app chưa có đăng nhập -> hỏi lúc bấm)
+  created_by             TEXT,   -- tên người bấm "Tạo đơn QC" bên checklist (CreateQC.created_by_name)
   created_at             TIMESTAMPTZ DEFAULT now(),
   updated_at             TIMESTAMPTZ DEFAULT now(),
   CONSTRAINT uq_qc_files_order_id UNIQUE (order_id)

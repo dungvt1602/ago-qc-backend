@@ -24,4 +24,6 @@ export const config = {
   // tránh vô tình mở một cổng không xác thực.
   grpcPort: Number(process.env.QC_GRPC_PORT) || 50051,
   qcAppApiKey: process.env.QC_APP_API_KEY || '',
+  // Địa chỉ frontend, để gRPC trả file_url mở thẳng hồ sơ cho checklist (không có dấu / cuối).
+  qcAppUrl: (process.env.QC_APP_URL || 'https://ago-qc.netlify.app').replace(/\/+$/, ''),
 };

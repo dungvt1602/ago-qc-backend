@@ -13,12 +13,14 @@ export async function completeQC(p) {
   const prog = photoProgress(data);
   if (prog.units === 0) throw new Error(`Chưa có ${prog.unitLabel} nào — không thể hoàn tất.`);
   if (!prog.complete) throw new Error(`Chưa đủ ảnh: mới ${prog.filled}/${prog.total} ô. Chụp đủ 100% rồi mới hoàn tất được.`);
-  await repo.update(p.qcFileId, { qc_done_at: new Date() });
+  // Người bấm: app chưa có đăng nhập nên frontend hỏi tên; không có thì lấy Nhân viên QC của hồ sơ.
+  const doneBy = String(p.doneBy || data.qcFile.QC_STAFF || '').trim().slice(0, 120);
+  await repo.update(p.qcFileId, { qc_done_at: new Date(), qc_done_by: doneBy });
   return getQCFile(p.qcFileId);
 }
 
 export async function reopenQC(p) {
-  await repo.update(p.qcFileId, { qc_done_at: null });
+  await repo.update(p.qcFileId, { qc_done_at: null, qc_done_by: null }); // checklist: mở lại -> done_at=0, done_by=""
   return getQCFile(p.qcFileId);
 }
 

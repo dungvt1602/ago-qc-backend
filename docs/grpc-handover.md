@@ -54,17 +54,31 @@ message GetStatusRequest {
 message GetStatusResponse {
   int32 photo_count = 1;  // tổng ảnh đã chụp (QC ngày + container + mẫu). Chưa có gì -> 0
   bool  done        = 2;  // QC đã bấm "Hoàn tất QC". Chưa xong / chưa có hồ sơ -> false
+
+  // --- Đợt 2 (16/09/2026): để checklist hiện đủ tiến độ ---
+  int32  photo_total = 3;  // tổng ô ảnh cần chụp của hồ sơ. Chưa có hồ sơ -> 0
+  string file_url    = 4;  // URL mở THẲNG hồ sơ trên App QC (không cần đăng nhập). Chưa có hồ sơ -> ""
+  int64  done_at     = 5;  // lúc bấm "Hoàn tất QC", unix ms. Chưa xong -> 0
+  string done_by     = 6;  // tên người bấm Hoàn tất. Chưa xong -> ""
+  repeated PhotoGroup groups = 7;  // tiến độ theo nhóm; sum(count)==photo_count, sum(total)==photo_total
+}
+
+message PhotoGroup {
+  string name  = 1;  // nhãn hiển thị: "QC ngày" | "Container" | "Mẫu"
+  int32  count = 2;  // đã chụp
+  int32  total = 3;  // cần chụp
 }
 
 message CreateQCRequest {
-  int64  order_id      = 1;  // bắt buộc, > 0
-  string po_no         = 2;
-  string product_name  = 3;
-  string specification = 4;
-  string quantity      = 5;
-  string unit          = 6;
-  string customer      = 7;
-  string contract_no   = 8;
+  int64  order_id        = 1;  // bắt buộc, > 0
+  string po_no           = 2;
+  string product_name    = 3;
+  string specification   = 4;
+  string quantity        = 5;
+  string unit            = 6;
+  string customer        = 7;
+  string contract_no     = 8;
+  string created_by_name = 9;  // tên người bấm "Tạo đơn QC" bên checklist -> hiện là người mở hồ sơ
 }
 
 message CreateQCResponse {
@@ -138,6 +152,32 @@ Checklist                          App QC
 | `GetStatus` đơn chưa có hồ sơ | **OK** với `{0, false}` |
 
 ---
+
+## 4b. Đợt 2 (16/09/2026) — các trường bổ sung của `GetStatus`
+
+Đã làm đúng yêu cầu mục 8 trong tài liệu của các bạn. Chỉ **thêm** trường 3–7 và trường 9; không đổi số cũ.
+
+| Trường | App QC trả gì |
+|---|---|
+| `photo_total` | Tổng ô ảnh của hồ sơ. Hàng xuất = 6 × số đợt QC + 21; hàng nhập = 4 × số mẫu + 9. Chưa có hồ sơ → 0. Luôn `photo_count ≤ photo_total`. |
+| `file_url` | `https://ago-qc.netlify.app/?file=<uuid>` — mở thẳng hồ sơ, **không cần đăng nhập** (App QC chưa có đăng nhập). Hồ sơ đã bị xóa → app tự về danh sách. Chưa có hồ sơ → `""`. |
+| `done_at` | Unix **ms** lúc bấm "Hoàn tất QC". Chưa xong / đã "Mở lại" → `0`. |
+| `done_by` | Tên người bấm Hoàn tất (app hỏi tên lúc bấm, điền sẵn Nhân viên QC). Chưa xong / đã "Mở lại" → `""`. |
+| `groups` | Hàng xuất: `[QC ngày, Container]`; hàng nhập: `[Container, Mẫu]`. Tính trong **cùng một vòng đếm** với `photo_count`/`photo_total` nên `sum(count)` và `sum(total)` **luôn khớp**. Chưa có hồ sơ → `[]`. |
+| `created_by_name` (CreateQC, trường 9) | Đã đọc và lưu; app hiện "Mở hồ sơ: <tên> (checklist)" ở đầu hồ sơ. |
+
+Lưu ý ngưỡng **80%** bên checklist là của các bạn; nút "Hoàn tất QC" trong App QC chỉ bật khi **100%** — hai việc độc lập.
+
+Kết quả `grpcurl` mong đợi (hàng xuất, 1 đợt, đã hoàn tất):
+
+```json
+{
+  "photoCount": 27, "done": true, "photoTotal": 27,
+  "fileUrl": "https://ago-qc.netlify.app/?file=3f2a…",
+  "doneAt": "1789542123456", "doneBy": "Trần Thị B",
+  "groups": [ { "name": "QC ngày", "count": 6, "total": 6 }, { "name": "Container", "count": 21, "total": 21 } ]
+}
+```
 
 ## 5. Gọi từ Go (mẫu)
 

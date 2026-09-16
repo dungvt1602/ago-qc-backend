@@ -8,7 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from '../config/env.js';
 import * as repo from '../repositories/qcFiles.repo.js';
-import { findOrCreateForOrder } from '../services/qcFiles.service.js';
+import { findOrCreateForOrder, getQCFile } from '../services/qcFiles.service.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROTO_PATH = path.resolve(__dirname, '../../proto/qc/v1/qc.proto');
@@ -54,11 +54,24 @@ function rpc(name, apiKey, handler) {
   };
 }
 
-// Đơn chưa có hồ sơ -> {0,false} chứ KHÔNG báo NOT_FOUND (theo hợp đồng: checklist hiểu là "chưa bắt đầu").
+// Đơn chưa có hồ sơ -> {0,false,...rỗng} chứ KHÔNG báo NOT_FOUND (theo hợp đồng: checklist hiểu là "chưa bắt đầu").
+// Đợt 2: thêm photo_total, file_url, done_at, done_by, groups. Tất cả tính từ getQCFile + photoProgress
+// (cùng nguồn với nút Hoàn tất trong app) nên sum(groups) luôn khớp photo_count/photo_total.
 async function getStatus(orderId) {
-  const row = await repo.getOrderStatus(orderId);
-  if (!row) return { photoCount: 0, done: false };
-  return { photoCount: Number(row.photo_count) || 0, done: Boolean(row.done) };
+  const id = await repo.findIdByOrderId(orderId);
+  if (!id) return { photoCount: 0, done: false, photoTotal: 0, fileUrl: '', doneAt: 0, doneBy: '', groups: [] };
+  const data = await getQCFile(id);
+  const f = data.qcFile, p = data.progress;
+  const done = Boolean(f.QC_DONE_AT);
+  return {
+    photoCount: p.filled,
+    done,
+    photoTotal: p.total,
+    fileUrl: `${config.qcAppUrl}/?file=${encodeURIComponent(id)}`,
+    doneAt: done ? Number(f.QC_DONE_AT_MS) || 0 : 0,
+    doneBy: done ? (f.QC_DONE_BY || '') : '',
+    groups: p.groups.map((g) => ({ name: g.name, count: g.count, total: g.total })),
+  };
 }
 
 async function createQC(orderId, r) {
@@ -66,6 +79,7 @@ async function createQC(orderId, r) {
     orderId,
     poNo: r.poNo, productName: r.productName, specification: r.specification,
     poQuantity: r.quantity, unit: r.unit, customer: r.customer, contractNo: r.contractNo,
+    createdBy: r.createdByName, // trường 9, đợt 2
   });
   return { qcFileId: qcFile.ID, lotCode: qcFile.LOT_CODE, created };
 }
