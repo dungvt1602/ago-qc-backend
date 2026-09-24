@@ -68,7 +68,9 @@ export async function findOrCreateForOrder(p) {
   if (existing) return { qcFile: upperKeys(existing), created: false };
 
   try {
-    const data = await createQCFile({ ...p, orderId, qcType: 'EXPORT' });
+    // Checklist không có trường "Nhân viên QC" -> mặc định là người bấm "Tạo đơn QC" (created_by_name).
+    // Ô này bắt buộc trên form, in lên PDF và điền sẵn tên lúc Hoàn tất; QC viên sửa được nếu khác người.
+    const data = await createQCFile({ ...p, orderId, qcType: 'EXPORT', qcStaff: p.qcStaff || p.createdBy || '' });
     return { qcFile: data.qcFile, created: true };
   } catch (err) {
     // 2 lệnh tạo tới cùng lúc: lệnh sau đụng ràng buộc UNIQUE -> lấy hồ sơ lệnh trước vừa tạo.
