@@ -168,12 +168,11 @@ const FIELD_MAP = {
 };
 const DATE_FIELDS = new Set(['start_date', 'est_finish_date', 'container_loading_date']);
 
-// Gom payload HTTP thành { cột: giá trị } sẽ ghi. THUẦN (không DB) để test được.
-// linkedToOrder = hồ sơ có order_id: 9 ô do đơn sở hữu là CHỈ-ĐỌC, bị bỏ âm thầm khỏi payload —
-// snapshot cũ mà frontend gửi lên không thể đè giá trị đơn vừa đẩy sang (PLAN-0043).
-// Hồ sơ tạo tay (không order_id) giữ nguyên hành vi cũ.
-export function buildFileUpdates(p, linkedToOrder) {
-  const payload = linkedToOrder ? stripOrderOwnedKeys(p) : p;
+// Gom payload HTTP thành { cột: giá trị } sẽ ghi. THUẦN (không DB, không đọc cấu hình) để test được.
+// stripOrderOwned = bỏ âm thầm 9 ô do đơn sở hữu khỏi payload (ô chỉ-đọc) — snapshot cũ mà frontend gửi lên
+// không thể đè giá trị đơn vừa đẩy sang (PLAN-0043). false = hành vi cũ, ghi mọi khoá có trong payload.
+export function buildFileUpdates(p, stripOrderOwned) {
+  const payload = stripOrderOwned ? stripOrderOwnedKeys(p) : p;
   const updates = {};
   for (const [camel, col] of Object.entries(FIELD_MAP)) {
     if (camel in payload) {
@@ -185,16 +184,24 @@ export function buildFileUpdates(p, linkedToOrder) {
   return updates;
 }
 
+// Cờ QC_ORDER_FIELDS_READONLY TẮT (mặc định) -> chạy y như trước PLAN-0043 cho MỌI hồ sơ (không thêm truy vấn nào).
+// Cờ BẬT -> hồ sơ có order_id bị bỏ 9 ô do đơn sở hữu; hồ sơ tạo tay (không order_id) vẫn như cũ.
+// Đọc config lúc gọi (không chốt lúc nạp module) để test bật/tắt được.
 export async function updateQCFile(p) {
-  const orderId = await repo.findOrderIdById(p.qcFileId);
-  await repo.update(p.qcFileId, buildFileUpdates(p, orderId !== null && orderId !== undefined));
+  let stripOrderOwned = false;
+  if (config.orderFieldsReadonly) {
+    const orderId = await repo.findOrderIdById(p.qcFileId);
+    stripOrderOwned = orderId !== null && orderId !== undefined;
+  }
+  await repo.update(p.qcFileId, buildFileUpdates(p, stripOrderOwned));
   return getQCFile(p.qcFileId);
 }
 
 // Backend checklist đẩy thông tin đơn sang (gRPC SyncOrderInfo, MỘT CHIỀU đơn -> QC).
 // info: { customer, productName, specification, poQuantity, unit, supplier, containerNo, sealNo,
 //         containerLoadingDate } — chuỗi rỗng = "đơn chưa có thông tin" nên KHÔNG BAO GIỜ xoá ô bên QC.
-// onlyFillEmpty: lần đồng bộ đầu của hồ sơ, chỉ điền ô QC còn trống.
+// onlyFillEmpty: lần đồng bộ đầu của hồ sơ. CHỈ áp cho 4 ô QC có thể đã gõ tay (supplier, container_no,
+//   seal_no, container_loading_date: chỉ điền khi còn trống); 5 ô còn lại luôn đồng bộ (xem ORDER_OWNED_FIELDS).
 // Trả { fileFound, locked, updated }:
 //   - chưa có hồ sơ cho order_id  -> fileFound=false (không phải lỗi);
 //   - hồ sơ đang khoá (cùng luật với assertEditable) -> locked=true, KHÔNG ghi;

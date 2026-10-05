@@ -7,9 +7,13 @@ import grpc from '@grpc/grpc-js';
 // 9 ô của mục "Thông tin lô hàng" mà ĐƠN là nguồn sự thật.
 //   key = tên trường frontend (camelCase, cùng khoá với FIELD_MAP của qcFiles.service)
 //   col = cột trong bảng qc_files
+//   fillOnlyOnFirstSync = QC CÓ THỂ đã gõ tay ô này trước khi có tính năng (trước đây không có nguồn từ đơn):
+//     ở lần đồng bộ ĐẦU (only_fill_empty) chỉ điền khi ô còn trống. 5 ô còn lại vốn do ĐƠN gieo lúc tạo hồ sơ
+//     (CreateQC) nên luôn đồng bộ về giá trị hiện tại của đơn, kể cả lần đầu — hồ sơ tạo trước khi đơn được
+//     sửa không bị kẹt giá trị cũ vĩnh viễn.
 // Danh sách này dùng cho CẢ HAI việc, để không bao giờ lệch nhau:
 //   - gRPC SyncOrderInfo: chỉ xét các ô này;
-//   - HTTP updateQCFile: với hồ sơ có order_id thì BỎ các khoá này khỏi payload (ô chỉ-đọc).
+//   - HTTP updateQCFile: khi bật cờ QC_ORDER_FIELDS_READONLY, hồ sơ có order_id bị BỎ các khoá này khỏi payload.
 // KHÔNG nằm trong đây: po_no, supplier_code, production_order, standard_appendix, est_finish_date,
 // contract_no, qc_staff, start_date — các ô đó QC tự nhập hoặc đã có luồng riêng.
 export const ORDER_OWNED_FIELDS = Object.freeze([
@@ -18,20 +22,22 @@ export const ORDER_OWNED_FIELDS = Object.freeze([
   Object.freeze({ key: 'specification', col: 'specification' }),
   Object.freeze({ key: 'poQuantity', col: 'po_quantity' }),
   Object.freeze({ key: 'unit', col: 'unit' }),
-  Object.freeze({ key: 'supplier', col: 'supplier' }),
-  Object.freeze({ key: 'containerNo', col: 'container_no' }),
-  Object.freeze({ key: 'sealNo', col: 'seal_no' }),
-  Object.freeze({ key: 'containerLoadingDate', col: 'container_loading_date', date: true }),
+  Object.freeze({ key: 'supplier', col: 'supplier', fillOnlyOnFirstSync: true }),
+  Object.freeze({ key: 'containerNo', col: 'container_no', fillOnlyOnFirstSync: true }),
+  Object.freeze({ key: 'sealNo', col: 'seal_no', fillOnlyOnFirstSync: true }),
+  Object.freeze({ key: 'containerLoadingDate', col: 'container_loading_date', date: true, fillOnlyOnFirstSync: true }),
 ]);
 
 export const ORDER_OWNED_KEYS = Object.freeze(ORDER_OWNED_FIELDS.map((f) => f.key));
 
-// Lỗi do dữ liệu gửi sang sai (không phải lỗi App QC). Mang grpcCode để wrapper rpc() trả đúng mã.
+// Lỗi do dữ liệu gửi sang sai (không phải lỗi App QC). Mang grpcCode để wrapper rpc() trả đúng mã;
+// expose=true cho phép rpc() trả nguyên câu message cho client (message luôn CỐ ĐỊNH, không chứa dữ liệu gửi sang).
 export class InvalidOrderInfoError extends Error {
   constructor(message) {
     super(message);
     this.name = 'InvalidOrderInfoError';
     this.grpcCode = grpc.status.INVALID_ARGUMENT;
+    this.expose = true;
   }
 }
 
@@ -47,7 +53,7 @@ export function isValidIsoDate(s) {
 }
 
 // Chuẩn hoá giá trị gửi sang: mọi ô thành chuỗi đã trim ('' = "đơn chưa có thông tin").
-// Chỉ trả về 9 ô do đơn sở hữu; ô lạ bị bỏ. Ngày sai định dạng -> InvalidOrderInfoError.
+// Chỉ trả về 9 ô do đơn sở hữu; ô lạ bị bỏ. Ngày sai định dạng hoặc chuỗi chứa NUL -> InvalidOrderInfoError.
 // Idempotent: chuẩn hoá lại kết quả cho ra đúng kết quả đó.
 export function normalizeOrderInfo(info) {
   const src = info || {};
@@ -55,6 +61,11 @@ export function normalizeOrderInfo(info) {
   for (const f of ORDER_OWNED_FIELDS) {
     const raw = src[f.key];
     const v = raw === undefined || raw === null ? '' : String(raw).trim();
+    // Postgres TEXT không chứa được U+0000 ("invalid byte sequence"): chặn ở đây để ra INVALID_ARGUMENT
+    // thay vì INTERNAL (worker sẽ thử lại vô ích). Câu lỗi cố định, KHÔNG in lại dữ liệu gửi sang.
+    if (v.includes('\u0000')) {
+      throw new InvalidOrderInfoError('thông tin đơn chứa ký tự NUL (U+0000) không hợp lệ');
+    }
     if (f.date && v !== '' && !isValidIsoDate(v)) {
       throw new InvalidOrderInfoError('container_loading_date phải là ngày hợp lệ dạng yyyy-MM-dd hoặc để trống');
     }
@@ -71,12 +82,13 @@ function isBlank(v) {
 // QUYẾT ĐỊNH ô nào cần ghi. Đầu vào:
 //   current : dòng hiện tại của hồ sơ (khoá = tên cột; ngày ở dạng 'YYYY-MM-DD' hoặc null)
 //   info    : thông tin từ đơn (khoá = key camelCase của ORDER_OWNED_FIELDS)
-//   onlyFillEmpty : true = lần đồng bộ ĐẦU, chỉ điền ô QC còn trống (không đè thứ QC đã gõ tay)
+//   onlyFillEmpty : true = lần đồng bộ ĐẦU. CHỈ áp cho 4 ô có fillOnlyOnFirstSync (QC có thể đã gõ tay):
+//                   các ô đó chỉ điền khi còn trống, không đè chữ QC đã gõ.
 // Trả về { [cột]: giá trị } — chỉ những cột THẬT SỰ đổi. Rỗng = không có gì để ghi (đừng chạy UPDATE).
 // Luật:
 //   - giá trị rỗng từ đơn KHÔNG BAO GIỜ ghi (không xoá dữ liệu bên QC);
-//   - onlyFillEmpty: chỉ ghi vào ô hiện đang trống;
-//   - ngược lại: ghi khi khác giá trị hiện tại (đơn thắng).
+//   - onlyFillEmpty + ô fillOnlyOnFirstSync: chỉ ghi vào ô hiện đang trống;
+//   - mọi trường hợp còn lại (5 ô còn lại ở mọi lần; cả 9 ô từ lần sau): ghi khi khác giá trị hiện tại (đơn thắng).
 export function selectFieldsToWrite(current, info, { onlyFillEmpty = false } = {}) {
   const incoming = normalizeOrderInfo(info);
   const row = current || {};
@@ -85,7 +97,7 @@ export function selectFieldsToWrite(current, info, { onlyFillEmpty = false } = {
     const next = incoming[f.key];
     if (next === '') continue;
     const cur = row[f.col];
-    if (onlyFillEmpty) {
+    if (onlyFillEmpty && f.fillOnlyOnFirstSync) {
       if (!isBlank(cur)) continue;
     } else if (cur !== undefined && cur !== null && String(cur) === next) {
       continue;

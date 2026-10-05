@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from '../config/env.js';
 import * as repo from '../repositories/qcFiles.repo.js';
+import { InvalidOrderInfoError } from '../lib/orderSync.js';
 import { findOrCreateForOrder, getQCFile, syncOrderInfo as syncOrderInfoToFile } from '../services/qcFiles.service.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -28,9 +29,13 @@ function keyMatches(given, expected) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-// Lỗi có .grpcCode hợp lệ (1..16; 0 = OK nên không tính) là lỗi handler chủ động ném.
-function hasGrpcCode(err) {
-  return Boolean(err) && Number.isInteger(err.grpcCode) && err.grpcCode >= 1 && err.grpcCode <= 16;
+// Lỗi handler CHỦ ĐỘNG ném cho client thấy: có .grpcCode hợp lệ (1..16; 0 = OK nên không tính) VÀ được đánh dấu
+// công khai (InvalidOrderInfoError hoặc expose === true). Chỉ loại này mới được trả message nguyên văn; mọi lỗi
+// khác — kể cả lỗi lạ tình cờ có .grpcCode — vẫn là INTERNAL với câu cố định, không lộ chi tiết nội bộ.
+function isExposedError(err) {
+  return Boolean(err)
+    && (err instanceof InvalidOrderInfoError || err.expose === true)
+    && Number.isInteger(err.grpcCode) && err.grpcCode >= 1 && err.grpcCode <= 16;
 }
 
 // Bọc chung cho mọi RPC: kiểm khóa -> kiểm order_id -> chạy -> ghi log -> đổi lỗi sang mã gRPC.
@@ -53,9 +58,9 @@ function rpc(name, apiKey, handler) {
       log(JSON.stringify(result));
       callback(null, result);
     } catch (err) {
-      // Lỗi CỐ Ý của handler (vd ngày sai định dạng) mang .grpcCode -> trả đúng mã đó kèm câu của lỗi.
+      // Lỗi CỐ Ý của handler (vd ngày sai định dạng) -> trả đúng mã .grpcCode kèm câu của lỗi.
       // Mọi lỗi khác (DB, bug...) vẫn là INTERNAL và KHÔNG lộ chi tiết ra ngoài.
-      if (hasGrpcCode(err)) {
+      if (isExposedError(err)) {
         log(grpc.status[err.grpcCode] ?? String(err.grpcCode)); // KHÔNG log nội dung request
         return callback({ code: err.grpcCode, details: String(err.message || '') });
       }

@@ -10,6 +10,11 @@ function required(name) {
   return value;
 }
 
+// Cờ bật/tắt: true/1/yes/on (không phân biệt hoa thường) = bật; thiếu hoặc giá trị khác = TẮT.
+function flag(name) {
+  return /^(true|1|yes|on)$/i.test(String(process.env[name] || '').trim());
+}
+
 export const config = {
   port: Number(process.env.PORT) || 8080,
   databaseUrl: required('DATABASE_URL'),
@@ -26,4 +31,10 @@ export const config = {
   qcAppApiKey: process.env.QC_APP_API_KEY || '',
   // Địa chỉ frontend (Next.js), để gRPC trả file_url = <url>/qc/<id> mở thẳng hồ sơ cho checklist.
   qcAppUrl: (process.env.QC_APP_URL || 'https://ago-qc.netlify.app').replace(/\/+$/, ''),
+
+  // Đồng bộ thông tin đơn (PLAN-0043): BẬT thì với hồ sơ có order_id, HTTP updateQCFile bỏ âm thầm 9 ô do đơn
+  // sở hữu (supplier, container_no, seal_no, container_loading_date, customer, product_name, specification,
+  // po_quantity, unit). Mặc định TẮT — chỉ bật SAU KHI đợt đồng bộ đầu từ checklist đã chạy xong, nếu không
+  // chữ QC gõ vào bị bỏ mà chưa có gì điền thay. SyncOrderInfo (gRPC) KHÔNG bị cờ này chi phối.
+  orderFieldsReadonly: flag('QC_ORDER_FIELDS_READONLY'),
 };

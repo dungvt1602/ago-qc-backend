@@ -70,7 +70,7 @@ message SyncOrderInfoRequest {
   string container_no           = 8;
   string seal_no                = 9;
   string container_loading_date = 10;  // yyyy-MM-dd (giờ VN) hoặc ""
-  bool   only_fill_empty        = 11;  // true: chỉ điền ô QC còn trống (lần đồng bộ đầu)
+  bool   only_fill_empty        = 11;  // true: lần đồng bộ đầu — 4 ô QC có thể đã gõ tay (supplier, container_no, seal_no, container_loading_date) chỉ điền khi còn trống; 5 ô còn lại luôn đồng bộ
 }
 
 message SyncOrderInfoResponse {
