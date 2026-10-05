@@ -1,9 +1,15 @@
 // Test THUẦN (không DB, không mạng) cho đồng bộ đơn -> hồ sơ QC (PLAN-0043):
-//   (a) lib/orderSync.js: hàm quyết định ô nào cần ghi + kiểm ngày;
-//   (b) qcFiles.service buildFileUpdates: HTTP updateQCFile bỏ 9 ô do đơn sở hữu với hồ sơ có order_id.
+//   (a) lib/orderSync.js: hàm quyết định ô nào cần ghi + kiểm ngày / NUL;
+//   (b) qcFiles.service buildFileUpdates: HTTP updateQCFile bỏ 9 ô do đơn sở hữu (khi bật cờ) với hồ sơ có order_id;
+//   (c) config: đọc cờ QC_ORDER_FIELDS_READONLY.
 // Chạy: npm test
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import grpc from '@grpc/grpc-js';
 import {
   ORDER_OWNED_FIELDS, ORDER_OWNED_KEYS, InvalidOrderInfoError,
   isValidIsoDate, normalizeOrderInfo, selectFieldsToWrite, stripOrderOwnedKeys,
@@ -30,6 +36,12 @@ describe('ORDER_OWNED_FIELDS', () => {
       'container_loading_date', 'container_no', 'customer', 'po_quantity', 'product_name',
       'seal_no', 'specification', 'supplier', 'unit',
     ]);
+  });
+  it('đúng 4 ô QC có thể đã gõ tay mang cờ fillOnlyOnFirstSync, 5 ô còn lại thì không', () => {
+    const first = ORDER_OWNED_FIELDS.filter((f) => f.fillOnlyOnFirstSync).map((f) => f.col).sort();
+    assert.deepEqual(first, ['container_loading_date', 'container_no', 'seal_no', 'supplier']);
+    const always = ORDER_OWNED_FIELDS.filter((f) => !f.fillOnlyOnFirstSync).map((f) => f.col).sort();
+    assert.deepEqual(always, ['customer', 'po_quantity', 'product_name', 'specification', 'unit']);
   });
   it('KHÔNG chứa ô QC tự quản (po_no, supplier_code, contract_no, est_finish_date, qc_staff...)', () => {
     for (const k of ['poNo', 'supplierCode', 'contractNo', 'estFinishDate', 'qcStaff', 'startDate', 'productionOrder', 'standardAppendix', 'status']) {
@@ -66,6 +78,27 @@ describe('normalizeOrderInfo', () => {
   it('idempotent', () => {
     const once = normalizeOrderInfo({ customer: '  A ', containerLoadingDate: ' 2026-10-05 ' });
     assert.deepEqual(normalizeOrderInfo(once), once);
+  });
+  it('chuỗi chứa NUL (U+0000) ở BẤT KỲ ô nào -> InvalidOrderInfoError, câu lỗi cố định, không in lại dữ liệu', () => {
+    const secret = 'BÍ-MẬT-KHÁCH';
+    for (const f of ORDER_OWNED_FIELDS) {
+      for (const bad of [`${secret}\u0000`, '\u0000', `a\u0000${secret}`]) {
+        assert.throws(() => normalizeOrderInfo({ [f.key]: bad }), (e) => {
+          assert.ok(e instanceof InvalidOrderInfoError, f.key);
+          assert.equal(e.grpcCode, grpc.status.INVALID_ARGUMENT);
+          assert.equal(e.expose, true);
+          assert.ok(!e.message.includes(secret), 'không được in lại dữ liệu gửi sang');
+          assert.match(e.message, /NUL/);
+          return true;
+        }, f.key);
+      }
+    }
+  });
+  it('NUL làm hỏng cả lần gọi qua selectFieldsToWrite (không ô nào được trả về)', () => {
+    assert.throws(() => selectFieldsToWrite(EMPTY_ROW, { customer: 'A', unit: 'k\u0000g' }), InvalidOrderInfoError);
+  });
+  it('khoảng trắng và ký tự điều khiển khác NUL vẫn được chấp nhận', () => {
+    assert.equal(normalizeOrderInfo({ unit: 'k\tg', specification: 'a\nb' }).unit, 'k\tg');
   });
   it('chấp nhận null/undefined cả đối tượng', () => {
     assert.equal(normalizeOrderInfo(null).customer, '');
@@ -138,27 +171,73 @@ describe('selectFieldsToWrite — chế độ ghi đè (onlyFillEmpty=false)', (
   });
 });
 
+// only_fill_empty = lần đồng bộ ĐẦU. CHỈ áp cho 4 ô QC có thể đã gõ tay (supplier, container_no, seal_no,
+// container_loading_date); 5 ô còn lại (customer, product_name, specification, po_quantity, unit) luôn đồng bộ.
 describe('selectFieldsToWrite — only_fill_empty (lần đồng bộ đầu)', () => {
   const opts = { onlyFillEmpty: true };
-  it('KHÔNG đè ô QC đã có giá trị, dù khác', () => {
-    assert.deepEqual(selectFieldsToWrite(FILLED, { ...SAME, customer: 'Khách B', containerLoadingDate: '2026-11-11' }, opts), {});
+  // Đơn có giá trị KHÁC ở cả 9 ô so với FILLED.
+  const DIFFERENT = {
+    customer: 'Khách B', productName: 'Xoài', specification: 'Loại 2', poQuantity: '200', unit: 'thùng',
+    supplier: 'Xưởng B', containerNo: 'MSKU2', sealNo: 'S2', containerLoadingDate: '2026-11-11',
+  };
+
+  it('4 ô QC có thể đã gõ tay: KHÔNG đè khi đã có chữ, dù đơn khác', () => {
+    const w = selectFieldsToWrite(FILLED, DIFFERENT, opts);
+    for (const col of ['supplier', 'container_no', 'seal_no', 'container_loading_date']) assert.ok(!(col in w), col);
   });
-  it('chỉ điền ô đang NULL', () => {
-    const w = selectFieldsToWrite({ ...FILLED, seal_no: null, container_loading_date: null }, { ...SAME, customer: 'Khách B', sealNo: 'S9', containerLoadingDate: '2026-10-05' }, opts);
+  it('5 ô còn lại: lần đầu VẪN đồng bộ về giá trị hiện tại của đơn (làm tươi giá trị cũ)', () => {
+    const w = selectFieldsToWrite(FILLED, DIFFERENT, opts);
+    assert.deepEqual(w, { customer: 'Khách B', product_name: 'Xoài', specification: 'Loại 2', po_quantity: '200', unit: 'thùng' });
+  });
+  it('lần đầu: QC gõ tay supplier thì giữ, customer/SP/quy cách/SL/đơn vị cũ thì được làm tươi', () => {
+    const row = { ...EMPTY_ROW, supplier: 'QC gõ tay', customer: 'Khách cũ', product_name: 'SP cũ', specification: 'QC cũ', po_quantity: '1', unit: 'cont' };
+    const w = selectFieldsToWrite(row, DIFFERENT, opts);
+    assert.deepEqual(w, {
+      customer: 'Khách B', product_name: 'Xoài', specification: 'Loại 2', po_quantity: '200', unit: 'thùng',
+      container_no: 'MSKU2', seal_no: 'S2', container_loading_date: '2026-11-11', // 3 ô trống thì điền
+    });
+    assert.ok(!('supplier' in w));
+  });
+  it('5 ô còn lại: giống giá trị đơn thì không ghi, lần đầu cũng vậy', () => {
+    assert.deepEqual(selectFieldsToWrite(FILLED, SAME, opts), {});
+    assert.deepEqual(selectFieldsToWrite(FILLED, { ...SAME, customer: '  Khách A ' }, opts), {});
+  });
+  it('4 ô: chỉ điền khi đang NULL', () => {
+    const w = selectFieldsToWrite({ ...FILLED, seal_no: null, container_loading_date: null }, { ...SAME, sealNo: 'S9', containerLoadingDate: '2026-10-05' }, opts);
     assert.deepEqual(w, { seal_no: 'S9', container_loading_date: '2026-10-05' });
   });
-  it("chỉ điền ô đang ''", () => {
-    const w = selectFieldsToWrite({ ...FILLED, supplier: '', unit: '' }, { ...SAME, supplier: 'Xưởng B', unit: 'thùng' }, opts);
-    assert.deepEqual(w, { supplier: 'Xưởng B', unit: 'thùng' });
+  it("4 ô: chỉ điền khi đang ''", () => {
+    const w = selectFieldsToWrite({ ...FILLED, supplier: '', container_no: '' }, { ...SAME, supplier: 'Xưởng B', containerNo: 'MSKU9' }, opts);
+    assert.deepEqual(w, { supplier: 'Xưởng B', container_no: 'MSKU9' });
   });
-  it('ô toàn khoảng trắng coi là trống -> điền', () => {
+  it('4 ô: toàn khoảng trắng coi là trống -> điền', () => {
     assert.deepEqual(selectFieldsToWrite({ ...FILLED, supplier: '  ' }, { supplier: 'Xưởng B' }, opts), { supplier: 'Xưởng B' });
+    assert.deepEqual(selectFieldsToWrite({ ...FILLED, seal_no: '\t' }, { sealNo: 'S9' }, opts), { seal_no: 'S9' });
   });
-  it('ô trống mà đơn cũng rỗng -> không ghi', () => {
-    assert.deepEqual(selectFieldsToWrite(EMPTY_ROW, { supplier: '  ' }, opts), {});
+  it('đơn rỗng không ghi gì (4 ô lẫn 5 ô), kể cả khi ô QC đang trống', () => {
+    const empty = Object.fromEntries(Object.keys(SAME).map((k) => [k, '  ']));
+    assert.deepEqual(selectFieldsToWrite(EMPTY_ROW, empty, opts), {});
+    assert.deepEqual(selectFieldsToWrite(FILLED, empty, opts), {});
   });
   it("khoảng trắng đầu/cuối giá trị gốc không làm ô 'có chữ' thành trống", () => {
     assert.deepEqual(selectFieldsToWrite({ ...FILLED, supplier: ' Xưởng A ' }, { supplier: 'Xưởng B' }, opts), {});
+  });
+  it('từ lần sau (onlyFillEmpty=false): cả 9 ô được ghi khi khác', () => {
+    const w = selectFieldsToWrite(FILLED, DIFFERENT, { onlyFillEmpty: false });
+    assert.deepEqual(w, {
+      customer: 'Khách B', product_name: 'Xoài', specification: 'Loại 2', po_quantity: '200', unit: 'thùng',
+      supplier: 'Xưởng B', container_no: 'MSKU2', seal_no: 'S2', container_loading_date: '2026-11-11',
+    });
+  });
+  it('lần đầu rồi lần sau trên cùng hồ sơ: hội tụ về giá trị của đơn, rồi không còn gì để ghi', () => {
+    const row = { ...FILLED };
+    const first = selectFieldsToWrite(row, DIFFERENT, opts);
+    Object.assign(row, first);
+    assert.equal(row.supplier, 'Xưởng A'); // lần đầu giữ chữ QC
+    const second = selectFieldsToWrite(row, DIFFERENT, { onlyFillEmpty: false });
+    Object.assign(row, second);
+    assert.equal(row.supplier, 'Xưởng B'); // từ lần sau đơn thắng
+    assert.deepEqual(selectFieldsToWrite(row, DIFFERENT, { onlyFillEmpty: false }), {});
   });
 });
 
@@ -174,11 +253,12 @@ describe('selectFieldsToWrite — ngày đóng cont', () => {
   it('ngày rỗng không xoá ngày hiện có', () => {
     assert.deepEqual(selectFieldsToWrite(FILLED, { containerLoadingDate: '' }), {});
   });
-  it('sai định dạng / không có thật -> InvalidOrderInfoError, mã INVALID_ARGUMENT (3)', () => {
+  it('sai định dạng / không có thật -> InvalidOrderInfoError, mã INVALID_ARGUMENT', () => {
     for (const bad of ['2026-02-30', '05/10/2026', '2026-1-5', 'hôm qua', '2026-10-05T10:00:00Z', '0000-01-01']) {
       assert.throws(() => selectFieldsToWrite(EMPTY_ROW, { containerLoadingDate: bad }), (e) => {
         assert.ok(e instanceof InvalidOrderInfoError, bad);
-        assert.equal(e.grpcCode, 3);
+        assert.equal(e.grpcCode, grpc.status.INVALID_ARGUMENT);
+        assert.equal(e.expose, true);
         assert.match(e.message, /container_loading_date/);
         return true;
       }, bad);
@@ -269,5 +349,32 @@ describe('buildFileUpdates — HTTP updateQCFile lọc khoá theo order_id', () 
     const copy = { ...FORM };
     buildFileUpdates(FORM, true);
     assert.deepEqual(FORM, copy);
+  });
+});
+
+// (c) Cờ QC_ORDER_FIELDS_READONLY đọc ở config/env.js. Mỗi giá trị chạy trong một tiến trình con RIÊNG
+// (config chốt biến môi trường lúc nạp module) và cwd = thư mục tạm để dotenv không đọc nhầm .env của máy.
+describe('config.orderFieldsReadonly — cờ QC_ORDER_FIELDS_READONLY', () => {
+  const ENV_JS = pathToFileURL(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/config/env.js')).href;
+  function readFlag(value) {
+    const env = { ...process.env, DATABASE_URL: 'postgresql://unused', SUPABASE_URL: 'https://unused.invalid', SUPABASE_SERVICE_KEY: 'unused' };
+    delete env.QC_ORDER_FIELDS_READONLY;
+    if (value !== undefined) env.QC_ORDER_FIELDS_READONLY = value;
+    const out = execFileSync(process.execPath, ['--input-type=module', '-e',
+      `import { config } from ${JSON.stringify(ENV_JS)}; console.log(JSON.stringify(config.orderFieldsReadonly));`,
+    ], { env, cwd: os.tmpdir(), encoding: 'utf8' });
+    return JSON.parse(out.trim().split('\n').pop());
+  }
+
+  it('mặc định TẮT khi không đặt biến, hoặc để trống', () => {
+    assert.equal(readFlag(undefined), false);
+    assert.equal(readFlag(''), false);
+    assert.equal(readFlag('   '), false);
+  });
+  it('BẬT với true/1/yes/on (không phân biệt hoa thường, bỏ khoảng trắng hai đầu)', () => {
+    for (const v of ['true', '1', 'yes', 'on', 'TRUE', 'Yes', ' On ', 'ON']) assert.equal(readFlag(v), true, JSON.stringify(v));
+  });
+  it('mọi giá trị khác đều TẮT (false/0/no/off/y/2/enable...)', () => {
+    for (const v of ['false', '0', 'no', 'off', 'y', '2', 'enable', 'truee', 'tru']) assert.equal(readFlag(v), false, JSON.stringify(v));
   });
 });
