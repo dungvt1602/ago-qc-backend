@@ -14,6 +14,9 @@ service QCService {
   // Checklist tạo hồ sơ QC (hàng xuất) cho đơn, điền sẵn thông tin cơ bản.
   // IDEMPOTENT: gọi lại với cùng order_id -> trả hồ sơ đã có, created = false. Không bao giờ tạo trùng.
   rpc CreateQC(CreateQCRequest) returns (CreateQCResponse);
+
+  // Checklist đẩy thông tin đơn sang hồ sơ QC ĐÃ CÓ (một chiều). Trường chuỗi RỖNG = "đơn chưa có thông tin" → App QC KHÔNG ghi đè.
+  rpc SyncOrderInfo(SyncOrderInfoRequest) returns (SyncOrderInfoResponse);
 }
 
 message GetStatusRequest {
@@ -54,4 +57,24 @@ message CreateQCResponse {
   string qc_file_id = 1;  // UUID hồ sơ bên App QC
   string lot_code   = 2;  // mã lô, vd QC-AGO2609-20260915
   bool   created    = 3;  // true = vừa tạo mới; false = đã có từ trước (gọi lại)
+}
+
+message SyncOrderInfoRequest {
+  int64  order_id               = 1;   // bắt buộc, > 0
+  string customer               = 2;
+  string product_name           = 3;
+  string specification          = 4;
+  string quantity               = 5;
+  string unit                   = 6;
+  string supplier               = 7;   // nơi sản xuất / nhà đóng gói
+  string container_no           = 8;
+  string seal_no                = 9;
+  string container_loading_date = 10;  // yyyy-MM-dd (giờ VN) hoặc ""
+  bool   only_fill_empty        = 11;  // true: chỉ điền ô QC còn trống (lần đồng bộ đầu)
+}
+
+message SyncOrderInfoResponse {
+  bool file_found = 1;  // false: chưa có hồ sơ cho order_id này (không phải lỗi)
+  bool locked     = 2;  // true: hồ sơ đang khoá, KHÔNG ghi
+  bool updated    = 3;  // true: có ít nhất một ô đổi giá trị thật
 }

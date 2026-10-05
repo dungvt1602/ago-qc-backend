@@ -101,6 +101,16 @@ cp .env.example .env     # rồi điền DATABASE_URL, SUPABASE_URL, SUPABASE_SE
 npm run dev              # chạy với tự động reload
 ```
 
+### Chạy test
+
+```bash
+npm test                 # node --test (không thêm thư viện); test thuần chạy ngay, không cần DB/mạng
+```
+
+Test SQL/gRPC thật (đồng bộ thông tin đơn sang hồ sơ QC) chỉ chạy khi đặt `TEST_DATABASE_URL` trỏ vào một DB
+**riêng để test** (tên DB phải có chữ `test`, test sẽ TRUNCATE `qc_files`; schema được nạp tự động). Không đặt thì
+phần đó tự bỏ qua. Không cần Supabase thật.
+
 Mở http://localhost:8080 thấy `{ ok: true }` là server sống.
 
 ### Chuẩn bị Supabase trước khi chạy
@@ -139,7 +149,7 @@ POST `/api` với body `{ action, payload }`, trả về `{ ok, result }`.
 | listQCFiles | — |
 | createQCFile | poNo, productName, qcStaff, ... |
 | getQCFile | qcFileId |
-| updateQCFile | qcFileId, + các trường thông tin |
+| updateQCFile | qcFileId, + các trường thông tin (hồ sơ có `order_id`: 9 ô do đơn sở hữu là chỉ-đọc, bị bỏ khỏi payload — xem `docs/grpc-handover.md` mục 4c) |
 | updateSummary | qcFileId, + các trường thống kê |
 | addDailyQC | qcFileId, qcDate, warehouse, qcStaff |
 | saveDailyQCItem | dailyQcId, itemCode, passRate, failRate, remarks |

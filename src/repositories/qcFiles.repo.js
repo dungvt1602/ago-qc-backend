@@ -120,6 +120,13 @@ export function findByOrderId(orderId) {
   return queryOne(SELECT_FILE + ' WHERE order_id = $1', [orderId]);
 }
 
+// Hồ sơ này dính đơn nào? NULL = hồ sơ tạo tay (hoặc không có hồ sơ). pg trả BIGINT dạng chuỗi.
+// HTTP updateQCFile dùng để biết có phải bỏ các ô do đơn sở hữu khỏi payload hay không.
+export async function findOrderIdById(id) {
+  const row = await queryOne('SELECT order_id FROM qc_files WHERE id = $1', [id]);
+  return row ? row.order_id : null;
+}
+
 // Chỉ lấy id hồ sơ của đơn (gRPC GetStatus dùng, rồi getQCFile để tính tiến độ đầy đủ theo nhóm).
 export async function findIdByOrderId(orderId) {
   const row = await queryOne('SELECT id FROM qc_files WHERE order_id = $1', [orderId]);

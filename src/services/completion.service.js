@@ -5,6 +5,7 @@ import * as dailyRepo from '../repositories/daily.repo.js';
 import * as samplesRepo from '../repositories/samples.repo.js';
 import { getQCFile } from './qcFiles.service.js';
 import { photoProgress } from '../lib/progress.js';
+import { isLocked } from '../lib/lock.js';
 
 // Chỉ cho hoàn tất khi đủ 100% ảnh. Kiểm ở đây (không tin frontend).
 export async function completeQC(p) {
@@ -38,7 +39,7 @@ export async function assertEditable(p) {
   const id = await resolveQcFileId(p);
   if (!id) return;
   const f = await repo.findById(id);
-  if (f && f.qc_done_at) {
+  if (isLocked(f)) { // luật khoá ở lib/lock.js — gRPC SyncOrderInfo dùng cùng hàm này
     throw new Error('Hồ sơ đã Hoàn tất QC nên đang KHÓA. Vào "Tổng quan" bấm "Mở lại" nếu thật sự cần sửa.');
   }
 }

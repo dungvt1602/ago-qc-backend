@@ -45,6 +45,9 @@ service QCService {
   // Checklist tạo hồ sơ QC (hàng xuất) cho đơn, điền sẵn thông tin cơ bản.
   // IDEMPOTENT: gọi lại với cùng order_id -> trả hồ sơ đã có, created = false. Không bao giờ tạo trùng.
   rpc CreateQC(CreateQCRequest) returns (CreateQCResponse);
+
+  // Checklist đẩy thông tin đơn sang hồ sơ QC ĐÃ CÓ (một chiều). Trường chuỗi RỖNG = "đơn chưa có thông tin" → App QC KHÔNG ghi đè.
+  rpc SyncOrderInfo(SyncOrderInfoRequest) returns (SyncOrderInfoResponse);
 }
 
 message GetStatusRequest {
@@ -86,9 +89,29 @@ message CreateQCResponse {
   string lot_code   = 2;  // mã lô, vd QC-AGO2609-20260915
   bool   created    = 3;  // true = vừa tạo mới; false = đã có từ trước (gọi lại)
 }
+
+message SyncOrderInfoRequest {
+  int64  order_id               = 1;   // bắt buộc, > 0
+  string customer               = 2;
+  string product_name           = 3;
+  string specification          = 4;
+  string quantity               = 5;
+  string unit                   = 6;
+  string supplier               = 7;   // nơi sản xuất / nhà đóng gói
+  string container_no           = 8;
+  string seal_no                = 9;
+  string container_loading_date = 10;  // yyyy-MM-dd (giờ VN) hoặc ""
+  bool   only_fill_empty        = 11;  // true: chỉ điền ô QC còn trống (lần đồng bộ đầu)
+}
+
+message SyncOrderInfoResponse {
+  bool file_found = 1;  // false: chưa có hồ sơ cho order_id này (không phải lỗi)
+  bool locked     = 2;  // true: hồ sơ đang khoá, KHÔNG ghi
+  bool updated    = 3;  // true: có ít nhất một ô đổi giá trị thật
+}
 ```
 
-Tên RPC trên đường dây: `/ago.qc.v1.QCService/GetStatus` và `/ago.qc.v1.QCService/CreateQC`.
+Tên RPC trên đường dây: `/ago.qc.v1.QCService/GetStatus`, `/ago.qc.v1.QCService/CreateQC` và `/ago.qc.v1.QCService/SyncOrderInfo`.
 
 ---
 
@@ -148,6 +171,7 @@ Checklist                          App QC
 |---|---|
 | Thiếu / sai `x-api-key` | `UNAUTHENTICATED` (16) |
 | `order_id` ≤ 0 hoặc không phải số nguyên | `INVALID_ARGUMENT` (3) |
+| `SyncOrderInfo`: `container_loading_date` không phải ngày thật dạng `yyyy-MM-dd` | `INVALID_ARGUMENT` (3) |
 | Lỗi nội bộ App QC (DB…) | `INTERNAL` (13) — checklist nên chặn hoàn tất sản xuất như hợp đồng đã ghi |
 | `GetStatus` đơn chưa có hồ sơ | **OK** với `{0, false}` |
 
@@ -178,6 +202,38 @@ Kết quả `grpcurl` mong đợi (hàng xuất, 1 đợt, đã hoàn tất):
   "groups": [ { "name": "QC ngày", "count": 6, "total": 6 }, { "name": "Container", "count": 21, "total": 21 } ]
 }
 ```
+
+## 4c. `SyncOrderInfo` — đồng bộ thông tin đơn sang hồ sơ QC (PLAN-0043)
+
+Checklist **đẩy** thông tin đơn sang hồ sơ QC **đã có**, một chiều đơn → QC (đơn là nguồn sự thật).
+QC viên nhập thông tin ở đơn một lần, các ô trùng bên "Thông tin lô hàng" tự cập nhật.
+
+9 ô **do đơn sở hữu**: `customer`, `product_name`, `specification`, `quantity` (→ SL), `unit`, `supplier`,
+`container_no`, `seal_no`, `container_loading_date`. Các ô khác (`po_no`, `supplier_code`, `contract_no`,
+`est_finish_date`, `qc_staff`...) **không** thuộc RPC này.
+
+| Quy tắc | Hành vi |
+|---|---|
+| Giá trị rỗng / toàn khoảng trắng | **Bỏ qua**, không bao giờ xoá ô bên QC. Giá trị có chữ được `trim` trước khi so/ghi. |
+| `only_fill_empty = true` | Lần đồng bộ đầu: chỉ ghi vào ô QC đang trống (NULL, `''` hoặc toàn khoảng trắng) — không đè thứ QC viên đã gõ tay. |
+| `only_fill_empty = false` | Ghi ô nào **khác** giá trị hiện tại (đơn thắng). |
+| Không ô nào đổi | **Không** chạy UPDATE, không đổi `updated_at` (`updated=false`) — gọi lại bao nhiêu lần cũng vô hại. |
+| Hồ sơ chưa có cho `order_id` | `file_found=false` (không phải lỗi). |
+| Hồ sơ đã **Hoàn tất QC** (đang khoá, cùng luật với các thao tác sửa trong app) | `locked=true`, **không ghi**. QC "Mở lại" hồ sơ thì lần gọi sau sẽ ghi. |
+| `container_loading_date` | `yyyy-MM-dd` (giờ VN) hoặc `""`. Sai định dạng / không phải ngày thật → `INVALID_ARGUMENT`. |
+
+Phía App QC, 9 ô trên là **chỉ-đọc** với hồ sơ có `order_id`: HTTP `updateQCFile` âm thầm bỏ các khoá đó khỏi
+payload, nên snapshot cũ của frontend không thể đè giá trị đơn vừa đẩy sang. Hồ sơ tạo tay (không `order_id`) giữ
+nguyên hành vi cũ.
+
+```bash
+grpcurl -plaintext -proto proto/qc/v1/qc.proto \
+  -H "x-api-key: $QC_APP_API_KEY" \
+  -d '{"order_id": 2, "supplier": "Nhà đóng gói A", "container_no": "MSKU1234567", "container_loading_date": "2026-10-05", "only_fill_empty": true}' \
+  ago-qc-backend:50051 ago.qc.v1.QCService/SyncOrderInfo
+```
+
+---
 
 ## 5. Gọi từ Go (mẫu)
 

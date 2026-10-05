@@ -8,7 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from '../config/env.js';
 import * as repo from '../repositories/qcFiles.repo.js';
-import { findOrCreateForOrder, getQCFile } from '../services/qcFiles.service.js';
+import { findOrCreateForOrder, getQCFile, syncOrderInfo as syncOrderInfoToFile } from '../services/qcFiles.service.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROTO_PATH = path.resolve(__dirname, '../../proto/qc/v1/qc.proto');
@@ -26,6 +26,11 @@ function keyMatches(given, expected) {
   if (typeof given !== 'string' || !expected) return false;
   const a = Buffer.from(given), b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// Lỗi có .grpcCode hợp lệ (1..16; 0 = OK nên không tính) là lỗi handler chủ động ném.
+function hasGrpcCode(err) {
+  return Boolean(err) && Number.isInteger(err.grpcCode) && err.grpcCode >= 1 && err.grpcCode <= 16;
 }
 
 // Bọc chung cho mọi RPC: kiểm khóa -> kiểm order_id -> chạy -> ghi log -> đổi lỗi sang mã gRPC.
@@ -48,6 +53,12 @@ function rpc(name, apiKey, handler) {
       log(JSON.stringify(result));
       callback(null, result);
     } catch (err) {
+      // Lỗi CỐ Ý của handler (vd ngày sai định dạng) mang .grpcCode -> trả đúng mã đó kèm câu của lỗi.
+      // Mọi lỗi khác (DB, bug...) vẫn là INTERNAL và KHÔNG lộ chi tiết ra ngoài.
+      if (hasGrpcCode(err)) {
+        log(grpc.status[err.grpcCode] ?? String(err.grpcCode)); // KHÔNG log nội dung request
+        return callback({ code: err.grpcCode, details: String(err.message || '') });
+      }
       console.error(`[gRPC] ${name} order=${orderId} LỖI:`, err);
       callback({ code: grpc.status.INTERNAL, details: 'lỗi nội bộ App QC' });
     }
@@ -84,6 +95,17 @@ async function createQC(orderId, r) {
   return { qcFileId: qcFile.ID, lotCode: qcFile.LOT_CODE, created };
 }
 
+// Checklist đẩy thông tin đơn sang hồ sơ ĐÃ CÓ (một chiều đơn -> QC, PLAN-0043).
+// Chuỗi rỗng = "đơn chưa có thông tin" nên không ghi đè; hồ sơ khoá -> locked=true, không ghi.
+// Luật chọn ô cần ghi nằm ở lib/orderSync.js, luật khoá ở lib/lock.js.
+async function syncOrderInfo(orderId, r) {
+  return syncOrderInfoToFile(orderId, {
+    customer: r.customer, productName: r.productName, specification: r.specification,
+    poQuantity: r.quantity, unit: r.unit, supplier: r.supplier,
+    containerNo: r.containerNo, sealNo: r.sealNo, containerLoadingDate: r.containerLoadingDate,
+  }, { onlyFillEmpty: r.onlyFillEmpty });
+}
+
 // Bật server. Trả về server (để tắt gọn khi shutdown) hoặc null nếu chưa cấu hình khóa.
 // opts cho phép test ghi đè cổng/khóa mà không đụng biến môi trường.
 export function startGrpc(opts = {}) {
@@ -98,6 +120,7 @@ export function startGrpc(opts = {}) {
   server.addService(loadQCService().service, {
     GetStatus: rpc('GetStatus', apiKey, getStatus),
     CreateQC: rpc('CreateQC', apiKey, createQC),
+    SyncOrderInfo: rpc('SyncOrderInfo', apiKey, syncOrderInfo),
   });
 
   return new Promise((resolve, reject) => {

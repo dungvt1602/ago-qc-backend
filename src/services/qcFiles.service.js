@@ -9,6 +9,8 @@ import { todayStr, dateCompact, sanitizeCode } from '../lib/util.js';
 import { removeFiles, removeFolder } from '../lib/storage.js';
 import { config } from '../config/env.js';
 import { photoProgress } from '../lib/progress.js';
+import { isLocked } from '../lib/lock.js';
+import { normalizeOrderInfo, selectFieldsToWrite, stripOrderOwnedKeys } from '../lib/orderSync.js';
 
 // Trả về danh mục cố định (frontend hiện chưa dùng, giữ cho đủ "hợp đồng" cũ).
 export function setupInfo() {
@@ -166,17 +168,49 @@ const FIELD_MAP = {
 };
 const DATE_FIELDS = new Set(['start_date', 'est_finish_date', 'container_loading_date']);
 
-export async function updateQCFile(p) {
+// Gom payload HTTP thành { cột: giá trị } sẽ ghi. THUẦN (không DB) để test được.
+// linkedToOrder = hồ sơ có order_id: 9 ô do đơn sở hữu là CHỈ-ĐỌC, bị bỏ âm thầm khỏi payload —
+// snapshot cũ mà frontend gửi lên không thể đè giá trị đơn vừa đẩy sang (PLAN-0043).
+// Hồ sơ tạo tay (không order_id) giữ nguyên hành vi cũ.
+export function buildFileUpdates(p, linkedToOrder) {
+  const payload = linkedToOrder ? stripOrderOwnedKeys(p) : p;
   const updates = {};
   for (const [camel, col] of Object.entries(FIELD_MAP)) {
-    if (camel in p) {
-      let val = p[camel];
+    if (camel in payload) {
+      let val = payload[camel];
       if (DATE_FIELDS.has(col) && val === '') val = null; // tránh lỗi ép '' -> date
       updates[col] = val;
     }
   }
-  await repo.update(p.qcFileId, updates);
+  return updates;
+}
+
+export async function updateQCFile(p) {
+  const orderId = await repo.findOrderIdById(p.qcFileId);
+  await repo.update(p.qcFileId, buildFileUpdates(p, orderId !== null && orderId !== undefined));
   return getQCFile(p.qcFileId);
+}
+
+// Backend checklist đẩy thông tin đơn sang (gRPC SyncOrderInfo, MỘT CHIỀU đơn -> QC).
+// info: { customer, productName, specification, poQuantity, unit, supplier, containerNo, sealNo,
+//         containerLoadingDate } — chuỗi rỗng = "đơn chưa có thông tin" nên KHÔNG BAO GIỜ xoá ô bên QC.
+// onlyFillEmpty: lần đồng bộ đầu của hồ sơ, chỉ điền ô QC còn trống.
+// Trả { fileFound, locked, updated }:
+//   - chưa có hồ sơ cho order_id  -> fileFound=false (không phải lỗi);
+//   - hồ sơ đang khoá (cùng luật với assertEditable) -> locked=true, KHÔNG ghi;
+//   - không ô nào đổi -> KHÔNG chạy UPDATE (updated_at bị bump sẽ làm form frontend remount, mất chữ đang gõ).
+// Ngày sai định dạng -> InvalidOrderInfoError (mã INVALID_ARGUMENT), kiểm TRƯỚC khi đụng DB.
+export async function syncOrderInfo(orderId, info, { onlyFillEmpty = false } = {}) {
+  const incoming = normalizeOrderInfo(info);
+  const file = await repo.findByOrderId(orderId);
+  if (!file) return { fileFound: false, locked: false, updated: false };
+  if (isLocked(file)) return { fileFound: true, locked: true, updated: false };
+
+  const updates = selectFieldsToWrite(file, incoming, { onlyFillEmpty });
+  if (Object.keys(updates).length === 0) return { fileFound: true, locked: false, updated: false };
+
+  await repo.update(file.id, updates);
+  return { fileFound: true, locked: false, updated: true };
 }
 
 const SUMMARY_MAP = {
