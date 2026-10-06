@@ -300,6 +300,18 @@ describe('PLAN-0043 — đồng bộ đơn sang hồ sơ QC (DB thật)', { skip
         assert.equal(f.seal_no, 'SEAL01');
       });
 
+      it('onWrite nhận TÊN cột đã ghi + cờ locked; không gọi khi không ghi gì', async () => {
+        await create(1);
+        await lock(1);
+        const seen = [];
+        const onWrite = (e) => seen.push(e);
+        await svc.syncOrderInfo(1, { customer: 'Khách A', containerNo: 'MSKU1234567' }, { onWrite });
+        assert.deepEqual(seen, [{ columns: ['customer', 'container_no'], locked: true }]);
+        await svc.syncOrderInfo(1, { customer: 'Khách A', containerNo: 'MSKU1234567' }, { onWrite }); // không đổi
+        await svc.syncOrderInfo(1, {}, { onWrite });                                                  // đơn rỗng
+        assert.equal(seen.length, 1);
+      });
+
       it('Mở lại hồ sơ sau đó vẫn bình thường: locked=false, vẫn ghi', async () => {
         await create(1);
         await svc.syncOrderInfo(1, FULL);
@@ -569,7 +581,7 @@ describe('PLAN-0043 — đồng bộ đơn sang hồ sơ QC (DB thật)', { skip
     it('đơn chưa có hồ sơ -> OK với file_found=false', async () => {
       const { err, res } = await sync({ orderId: 4242, customer: 'A' });
       assert.equal(err, null);
-      assert.deepEqual({ ...res }, { fileFound: false, locked: false, updated: false });
+      assert.deepEqual({ ...res }, { fileFound: false, locked: false, updated: false, writesWhenLocked: false });
     });
 
     it('hồ sơ có sẵn: điền, lặp lại không đổi, ghi đè khi khác', async () => {
@@ -577,13 +589,13 @@ describe('PLAN-0043 — đồng bộ đơn sang hồ sơ QC (DB thật)', { skip
       const req = { orderId: 10, ...FULL, onlyFillEmpty: true };
       let r = await sync(req);
       assert.equal(r.err, null);
-      assert.deepEqual({ ...r.res }, { fileFound: true, locked: false, updated: true });
+      assert.deepEqual({ ...r.res }, { fileFound: true, locked: false, updated: true, writesWhenLocked: true });
       assert.equal((await row(10)).container_no, 'MSKU1234567');
       assert.equal((await row(10)).container_loading_date, '2026-10-05');
 
       await age(10);
       r = await sync({ ...req, onlyFillEmpty: false });
-      assert.deepEqual({ ...r.res }, { fileFound: true, locked: false, updated: false });
+      assert.deepEqual({ ...r.res }, { fileFound: true, locked: false, updated: false, writesWhenLocked: true });
       assert.equal((await row(10)).updated_epoch, OLD_EPOCH);
 
       r = await sync({ ...req, onlyFillEmpty: false, sealNo: 'SEAL99' });
@@ -619,14 +631,54 @@ describe('PLAN-0043 — đồng bộ đơn sang hồ sơ QC (DB thật)', { skip
       const done = (await row(13)).qc_done_at;
       const { err, res } = await sync({ orderId: 13, ...FULL });
       assert.equal(err, null);
-      assert.deepEqual({ ...res }, { fileFound: true, locked: true, updated: true });
+      assert.deepEqual({ ...res }, { fileFound: true, locked: true, updated: true, writesWhenLocked: true });
       const f = await row(13);
       assert.equal(f.supplier, 'Xưởng A');
       assert.equal(f.container_no, 'MSKU1234567');
       assert.equal(f.container_loading_date, '2026-10-05');
       assert.deepEqual(f.qc_done_at, done);
       // gọi lại y hệt: không có gì đổi
-      assert.deepEqual({ ...(await sync({ orderId: 13, ...FULL })).res }, { fileFound: true, locked: true, updated: false });
+      assert.deepEqual({ ...(await sync({ orderId: 13, ...FULL })).res }, { fileFound: true, locked: true, updated: false, writesWhenLocked: true });
+    });
+
+    it('cờ writes_when_locked = true MỖI KHI file_found (hồ sơ mở lẫn khoá), false khi chưa có hồ sơ', async () => {
+      await create(21);
+      await create(22);
+      await lock(22);
+      for (const [id, locked] of [[21, false], [22, true]]) {
+        const { err, res } = await sync({ orderId: id, ...FULL });
+        assert.equal(err, null);
+        assert.equal(res.writesWhenLocked, true, `order ${id}`);
+        assert.equal(res.locked, locked);
+        // gọi lại không đổi gì: cờ vẫn true (nó mô tả bản App QC, không mô tả việc có ghi hay không)
+        assert.equal((await sync({ orderId: id, ...FULL })).res.writesWhenLocked, true);
+      }
+      assert.equal((await sync({ orderId: 4243, ...FULL })).res.writesWhenLocked, false);
+    });
+
+    it('hồ sơ khoá nhận dữ liệu -> log TÊN cột đã ghi (không log giá trị); hồ sơ mở / không ghi thì không có dòng đó', async () => {
+      await create(23);
+      await lock(23);
+      logMock.mock.resetCalls();
+      await sync({ orderId: 23, customer: 'Khách Bí Mật', containerNo: 'MSKU7654321', sealNo: 'SEAL-BI-MAT' });
+      let lines = logMock.mock.calls.map((c) => c.arguments.join(' '));
+      const vet = lines.filter((l) => l.includes('ĐÃ KHOÁ'));
+      assert.equal(vet.length, 1, lines.join(' | '));
+      assert.match(vet[0], /order=23/);
+      assert.match(vet[0], /customer, container_no, seal_no/);
+      for (const secret of ['Khách Bí Mật', 'MSKU7654321', 'SEAL-BI-MAT']) {
+        assert.ok(!lines.join(' | ').includes(secret), `log lộ giá trị ${secret}`);
+      }
+
+      logMock.mock.resetCalls(); // không có gì đổi -> không ghi -> không có dòng vết
+      await sync({ orderId: 23, customer: 'Khách Bí Mật', containerNo: 'MSKU7654321', sealNo: 'SEAL-BI-MAT' });
+      assert.ok(!logMock.mock.calls.some((c) => c.arguments.join(' ').includes('ĐÃ KHOÁ')));
+
+      await create(24); // hồ sơ mở nhận dữ liệu: bình thường, không phải sự kiện đáng ghi vết riêng
+      logMock.mock.resetCalls();
+      await sync({ orderId: 24, ...FULL });
+      lines = logMock.mock.calls.map((c) => c.arguments.join(' '));
+      assert.ok(!lines.some((l) => l.includes('ĐÃ KHOÁ')), lines.join(' | '));
     });
 
     it('ngày sai -> INVALID_ARGUMENT kèm lý do, không ghi gì', async () => {
@@ -699,7 +751,7 @@ describe('PLAN-0043 — đồng bộ đơn sang hồ sơ QC (DB thật)', { skip
       assert.equal(created.err, null);
       assert.equal(created.res.created, true);
       const s = await sync({ orderId: 20, supplier: 'Xưởng A', customer: 'Khách đổi tên', containerNo: 'MSKU7654321' });
-      assert.deepEqual({ ...s.res }, { fileFound: true, locked: false, updated: true });
+      assert.deepEqual({ ...s.res }, { fileFound: true, locked: false, updated: true, writesWhenLocked: true });
       const f = await row(20);
       assert.equal(f.customer, 'Khách đổi tên');
       assert.equal(f.product_name, 'Thanh long'); // đơn rỗng -> giữ

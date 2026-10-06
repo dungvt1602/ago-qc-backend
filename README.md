@@ -170,3 +170,5 @@ Biến môi trường **`QC_ORDER_FIELDS_READONLY`** (mặc định **tắt**; b
 **Hồ sơ đã khóa (Hoàn tất QC) vẫn nhận 9 ô thuộc đơn** (owner chốt 2026-10-06): luồng đơn là tuần tự — QC xong rồi
 Logistics mới nhập số container / seal / ngày đóng cont — nên `SyncOrderInfo` ghi 9 ô đó ở mọi trạng thái, và chỉ
 9 cột đó (không đổi `qc_done_at` / kết luận QC). Khóa vẫn chặn HTTP `updateQCFile` và mọi ô do QC sở hữu.
+Response gRPC luôn kèm `writes_when_locked = true` khi có hồ sơ — cầu chì để checklist nhận ra bản App QC cũ (thấy khóa
+thì không ghi) và không lưu dấu "đã đồng bộ" nhầm; đừng bỏ cờ này. Mỗi lần ghi vào hồ sơ khóa, log ghi TÊN cột (không ghi giá trị).

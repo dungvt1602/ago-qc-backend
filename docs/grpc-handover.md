@@ -108,9 +108,10 @@ message SyncOrderInfoRequest {
 }
 
 message SyncOrderInfoResponse {
-  bool file_found = 1;  // false: chưa có hồ sơ cho order_id này (không phải lỗi)
-  bool locked     = 2;  // true: hồ sơ đang khoá (QC đã Hoàn tất) — CHỈ để báo; 9 ô thuộc đơn VẪN được ghi như hồ sơ đang mở
-  bool updated    = 3;  // true: có ít nhất một ô đổi giá trị thật (đã ghi, kể cả hồ sơ khoá)
+  bool file_found         = 1;  // false: chưa có hồ sơ cho order_id này (không phải lỗi)
+  bool locked             = 2;  // true: hồ sơ đang khoá (QC đã Hoàn tất) — CHỈ để báo; 9 ô thuộc đơn VẪN được ghi như hồ sơ đang mở
+  bool updated            = 3;  // true: có ít nhất một ô đổi giá trị thật (đã ghi, kể cả hồ sơ khoá)
+  bool writes_when_locked = 4;  // true: App QC bản ghi cả hồ sơ khoá — bản mới LUÔN đặt true khi file_found. Bản cũ không có trường này (vắng = false): thấy locked mà không có cờ này thì checklist coi là App QC cũ (chưa ghi) và KHÔNG lưu hash
 }
 ```
 
@@ -223,7 +224,8 @@ QC viên nhập thông tin ở đơn một lần, các ô trùng bên "Thông ti
 | `only_fill_empty = false` | Cả 9 ô: ghi ô nào **khác** giá trị hiện tại (đơn thắng). |
 | Không ô nào đổi | **Không** chạy UPDATE, không đổi `updated_at` (`updated=false`) — gọi lại bao nhiêu lần cũng vô hại. |
 | Hồ sơ chưa có cho `order_id` | `file_found=false` (không phải lỗi). |
-| Hồ sơ đã **Hoàn tất QC** (đang khoá, cùng luật với các thao tác sửa trong app) | **Vẫn ghi** 9 ô thuộc đơn như hồ sơ đang mở (owner chốt 2026-10-06: ô nào đồng nhất được với đơn thì phải đồng nhất để QC khỏi nhập lại; luồng đơn tuần tự — QC xong rồi Logistics mới nhập số cont / seal / ngày đóng cont — nên khoá mà chặn thì ba ô đó không bao giờ về). `locked=true` trong response chỉ để **báo** "hồ sơ đang khoá"; `updated` cho biết có ghi thật không. Chỉ đúng 9 cột này: không ô nào khác, **không** đổi `qc_done_at` / trạng thái / kết luận QC. Khoá vẫn áp nguyên cho HTTP `updateQCFile` và mọi ô do QC sở hữu. |
+| Hồ sơ đã **Hoàn tất QC** (đang khoá, cùng luật với các thao tác sửa trong app) | **Vẫn ghi** 9 ô thuộc đơn như hồ sơ đang mở (owner chốt 2026-10-06: ô nào đồng nhất được với đơn thì phải đồng nhất để QC khỏi nhập lại; luồng đơn tuần tự — QC xong rồi Logistics mới nhập số cont / seal / ngày đóng cont — nên khoá mà chặn thì ba ô đó không bao giờ về). `locked=true` trong response chỉ để **báo** "hồ sơ đang khoá"; `updated` cho biết có ghi thật không. Chỉ đúng 9 cột này: không ô nào khác, **không** đổi `qc_done_at` / trạng thái / kết luận QC. Khoá vẫn áp nguyên cho HTTP `updateQCFile` và mọi ô do QC sở hữu. Mỗi lần ghi vào hồ sơ khoá App QC log TÊN cột đã ghi (không log giá trị). |
+| Cờ `writes_when_locked` (trường 4 của response) | App QC bản này **luôn đặt `true` khi `file_found`** (hồ sơ mở lẫn khoá, có ghi hay không). Checklist dùng nó làm cầu chì: bản App QC cũ không biết trường này (proto3: vắng = `false`) và thấy khoá thì không ghi, nên `file_found && locked && !writes_when_locked` = "dữ liệu CHƯA được ghi" — checklist KHÔNG lưu hash, hoãn 1 giờ, báo `QC_APP_OUTDATED`. **Đừng bỏ cờ này hay đặt nó theo điều kiện khác.** Tương thích dây hai chiều (proto3 bỏ qua trường lạ). |
 | `container_loading_date` | `yyyy-MM-dd` (giờ VN) hoặc `""`. Sai định dạng / không phải ngày thật → `INVALID_ARGUMENT`. |
 | Chuỗi chứa ký tự NUL (U+0000) | `INVALID_ARGUMENT` (Postgres TEXT không lưu được); thử lại cũng vô ích. |
 

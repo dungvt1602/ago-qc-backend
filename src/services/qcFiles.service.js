@@ -211,7 +211,9 @@ export async function updateQCFile(p) {
 // Chỉ 9 cột của ORDER_OWNED_FIELDS bị ghi (selectFieldsToWrite chỉ xét chúng): KHÔNG đụng cột nào khác, KHÔNG đổi
 // qc_done_at / trạng thái / kết luận QC. Khoá vẫn áp cho HTTP updateQCFile và mọi ô do QC sở hữu (routes/api.js).
 // Ngày sai định dạng -> InvalidOrderInfoError (mã INVALID_ARGUMENT), kiểm TRƯỚC khi đụng DB.
-export async function syncOrderInfo(orderId, info, { onlyFillEmpty = false } = {}) {
+// onWrite({ columns, locked }) (tuỳ chọn): gọi SAU khi UPDATE xong — chỉ TÊN cột đã ghi, không bao giờ giá trị;
+//   tầng gRPC dùng để log vết khi một hồ sơ ĐÃ KHOÁ nhận dữ liệu từ đơn.
+export async function syncOrderInfo(orderId, info, { onlyFillEmpty = false, onWrite } = {}) {
   const incoming = normalizeOrderInfo(info);
   const file = await repo.findByOrderId(orderId);
   if (!file) return { fileFound: false, locked: false, updated: false };
@@ -221,6 +223,7 @@ export async function syncOrderInfo(orderId, info, { onlyFillEmpty = false } = {
   if (Object.keys(updates).length === 0) return { fileFound: true, locked, updated: false };
 
   await repo.update(file.id, updates);
+  if (onWrite) onWrite({ columns: Object.keys(updates), locked });
   return { fileFound: true, locked, updated: true };
 }
 

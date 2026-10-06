@@ -75,7 +75,8 @@ message SyncOrderInfoRequest {
 }
 
 message SyncOrderInfoResponse {
-  bool file_found = 1;  // false: chưa có hồ sơ cho order_id này (không phải lỗi)
-  bool locked     = 2;  // true: hồ sơ đang khoá (QC đã Hoàn tất) — CHỈ để báo; 9 ô thuộc đơn VẪN được ghi như hồ sơ đang mở
-  bool updated    = 3;  // true: có ít nhất một ô đổi giá trị thật (đã ghi, kể cả hồ sơ khoá)
+  bool file_found         = 1;  // false: chưa có hồ sơ cho order_id này (không phải lỗi)
+  bool locked             = 2;  // true: hồ sơ đang khoá (QC đã Hoàn tất) — CHỈ để báo; 9 ô thuộc đơn VẪN được ghi như hồ sơ đang mở
+  bool updated            = 3;  // true: có ít nhất một ô đổi giá trị thật (đã ghi, kể cả hồ sơ khoá)
+  bool writes_when_locked = 4;  // true: App QC bản ghi cả hồ sơ khoá — bản mới LUÔN đặt true khi file_found. Bản cũ không có trường này (vắng = false): thấy locked mà không có cờ này thì checklist coi là App QC cũ (chưa ghi) và KHÔNG lưu hash
 }

@@ -103,12 +103,22 @@ async function createQC(orderId, r) {
 // Checklist đẩy thông tin đơn sang hồ sơ ĐÃ CÓ (một chiều đơn -> QC, PLAN-0043).
 // Chuỗi rỗng = "đơn chưa có thông tin" nên không ghi đè; hồ sơ khoá vẫn ghi 9 ô thuộc đơn (locked=true chỉ để báo).
 // Luật chọn ô cần ghi nằm ở lib/orderSync.js, luật khoá ở lib/lock.js.
+// writes_when_locked (trường 4) = true MỖI KHI file_found: bản App QC này biết ghi cả hồ sơ khoá. Checklist dựa vào
+// cờ đó để phân biệt với bản cũ (thấy khoá thì không ghi, không có trường này) — thiếu cờ mà locked thì nó KHÔNG
+// coi là đã đồng bộ. Đừng bỏ cờ, và đừng đặt nó theo điều kiện nào khác.
 async function syncOrderInfo(orderId, r) {
-  return syncOrderInfoToFile(orderId, {
+  const res = await syncOrderInfoToFile(orderId, {
     customer: r.customer, productName: r.productName, specification: r.specification,
     poQuantity: r.quantity, unit: r.unit, supplier: r.supplier,
     containerNo: r.containerNo, sealNo: r.sealNo, containerLoadingDate: r.containerLoadingDate,
-  }, { onlyFillEmpty: r.onlyFillEmpty });
+  }, {
+    onlyFillEmpty: r.onlyFillEmpty,
+    // Hồ sơ ĐÃ KHOÁ mà vẫn nhận dữ liệu từ đơn: log TÊN cột đã ghi (KHÔNG log giá trị) để truy vết ai đổi gì.
+    onWrite: ({ columns, locked }) => {
+      if (locked) console.log(`[gRPC] SyncOrderInfo order=${orderId} hồ sơ ĐÃ KHOÁ nhận dữ liệu từ đơn, cột đã ghi: ${columns.join(', ')}`);
+    },
+  });
+  return { ...res, writesWhenLocked: res.fileFound };
 }
 
 // Bật server. Trả về server (để tắt gọn khi shutdown) hoặc null nếu chưa cấu hình khóa.
