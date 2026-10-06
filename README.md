@@ -12,7 +12,7 @@ src/
 │   ├── db.js              Pool kết nối PostgreSQL + helper query/transaction
 │   ├── storage.js         Upload/tải ảnh & PDF trên Supabase Storage
 │   ├── rows.js            Đổi cột DB (snake_case) -> khóa API (UPPER_CASE)
-│   ├── lock.js            Luật khóa hồ sơ sau "Hoàn tất QC" (HTTP và gRPC dùng chung)
+│   ├── lock.js            Luật khóa hồ sơ sau "Hoàn tất QC" (HTTP chặn sửa; gRPC SyncOrderInfo chỉ dùng để báo `locked`)
 │   ├── orderSync.js       Đồng bộ thông tin đơn -> hồ sơ QC: 9 ô do đơn sở hữu + hàm chọn ô cần ghi (thuần)
 │   └── util.js            Tiện ích ngày giờ, làm sạch chuỗi, chunk
 ├── data/catalog.js        6 hạng mục QC ngày + 21 ảnh container
@@ -166,3 +166,7 @@ Backend checklist đẩy thông tin đơn sang hồ sơ QC qua gRPC `SyncOrderIn
 Biến môi trường **`QC_ORDER_FIELDS_READONLY`** (mặc định **tắt**; bật bằng `true`/`1`/`yes`/`on`) quyết định
 `updateQCFile` có coi 9 ô do đơn sở hữu là chỉ-đọc hay không: tắt = hành vi cũ cho mọi hồ sơ; bật = hồ sơ có
 `order_id` bị bỏ các ô đó khỏi payload (hồ sơ tạo tay không đổi). Chỉ bật **sau khi đợt đồng bộ đầu đã chạy xong**.
+
+**Hồ sơ đã khóa (Hoàn tất QC) vẫn nhận 9 ô thuộc đơn** (owner chốt 2026-10-06): luồng đơn là tuần tự — QC xong rồi
+Logistics mới nhập số container / seal / ngày đóng cont — nên `SyncOrderInfo` ghi 9 ô đó ở mọi trạng thái, và chỉ
+9 cột đó (không đổi `qc_done_at` / kết luận QC). Khóa vẫn chặn HTTP `updateQCFile` và mọi ô do QC sở hữu.

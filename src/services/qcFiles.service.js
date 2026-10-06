@@ -204,20 +204,24 @@ export async function updateQCFile(p) {
 //   seal_no, container_loading_date: chỉ điền khi còn trống); 5 ô còn lại luôn đồng bộ (xem ORDER_OWNED_FIELDS).
 // Trả { fileFound, locked, updated }:
 //   - chưa có hồ sơ cho order_id  -> fileFound=false (không phải lỗi);
-//   - hồ sơ đang khoá (cùng luật với assertEditable) -> locked=true, KHÔNG ghi;
+//   - locked = hồ sơ đang khoá (cùng luật isLocked với assertEditable) — CHỈ để BÁO, KHÔNG chặn ghi:
+//     9 ô thuộc đơn LUÔN được ghi, kể cả hồ sơ đã Hoàn tất QC (owner chốt 2026-10-06: luồng đơn tuần tự — QC xong
+//     rồi Logistics mới nhập số cont / seal / ngày đóng cont — nên khoá mà chặn thì ba ô đó không bao giờ về tới QC);
 //   - không ô nào đổi -> KHÔNG chạy UPDATE (updated_at bị bump sẽ làm form frontend remount, mất chữ đang gõ).
+// Chỉ 9 cột của ORDER_OWNED_FIELDS bị ghi (selectFieldsToWrite chỉ xét chúng): KHÔNG đụng cột nào khác, KHÔNG đổi
+// qc_done_at / trạng thái / kết luận QC. Khoá vẫn áp cho HTTP updateQCFile và mọi ô do QC sở hữu (routes/api.js).
 // Ngày sai định dạng -> InvalidOrderInfoError (mã INVALID_ARGUMENT), kiểm TRƯỚC khi đụng DB.
 export async function syncOrderInfo(orderId, info, { onlyFillEmpty = false } = {}) {
   const incoming = normalizeOrderInfo(info);
   const file = await repo.findByOrderId(orderId);
   if (!file) return { fileFound: false, locked: false, updated: false };
-  if (isLocked(file)) return { fileFound: true, locked: true, updated: false };
+  const locked = isLocked(file);
 
   const updates = selectFieldsToWrite(file, incoming, { onlyFillEmpty });
-  if (Object.keys(updates).length === 0) return { fileFound: true, locked: false, updated: false };
+  if (Object.keys(updates).length === 0) return { fileFound: true, locked, updated: false };
 
   await repo.update(file.id, updates);
-  return { fileFound: true, locked: false, updated: true };
+  return { fileFound: true, locked, updated: true };
 }
 
 const SUMMARY_MAP = {

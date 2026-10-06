@@ -230,33 +230,96 @@ describe('PLAN-0043 — đồng bộ đơn sang hồ sơ QC (DB thật)', { skip
       assert.equal(f.unit ?? '', '');
     });
 
-    it('hồ sơ đã Hoàn tất (khoá): locked=true, KHÔNG ghi; Mở lại thì ghi', async () => {
-      await create(1);
-      await svc.syncOrderInfo(1, FULL);
-      await age(1);
-      await lock(1);
-      const r = await svc.syncOrderInfo(1, { ...FULL, customer: 'Khách B', supplier: 'Xưởng B' });
-      assert.deepEqual(r, { fileFound: true, locked: true, updated: false });
-      let f = await row(1);
-      assert.equal(f.customer, 'Khách A');
-      assert.equal(f.supplier, 'Xưởng A');
-      assert.equal(f.updated_epoch, OLD_EPOCH);
+    // Owner chốt 2026-10-06: 9 ô thuộc đơn chảy sang CẢ hồ sơ đã Hoàn tất QC — luồng đơn tuần tự (QC xong ở bước 3,
+    // Logistics nhập số cont / seal / ngày đóng cont ở bước 5), khoá mà chặn thì ba ô đó không bao giờ về tới QC.
+    describe('hồ sơ đã Hoàn tất QC (khoá) VẪN nhận 9 ô thuộc đơn', () => {
+      // Mọi cột của dòng qc_files TRỪ 9 ô thuộc đơn và updated_at — phải nguyên vẹn sau đồng bộ.
+      const others = async (orderId) => {
+        const { rows } = await pool.query('SELECT * FROM qc_files WHERE order_id = $1', [orderId]);
+        const r = { ...rows[0] };
+        for (const c of [...NINE, 'updated_at']) delete r[c];
+        return r;
+      };
 
-      const id = f.id;
-      await completion.reopenQC({ qcFileId: id });
-      const r2 = await svc.syncOrderInfo(1, { ...FULL, customer: 'Khách B' });
-      assert.deepEqual(r2, { fileFound: true, locked: false, updated: true });
-      f = await row(1);
-      assert.equal(f.customer, 'Khách B');
-    });
+      it('luồng thật: QC xong rồi Logistics mới nhập cont/seal/ngày đóng — cả ba về tới hồ sơ khoá', async () => {
+        await create(1, { supplier: 'Xưởng A' });
+        // Bước 3: đơn mới có khách + hàng; hồ sơ còn mở.
+        assert.equal((await svc.syncOrderInfo(1, { customer: 'Khách A', productName: 'Thanh long', poQuantity: '100', unit: 'kg' }, { onlyFillEmpty: true })).updated, true);
+        await lock(1); // QC bấm Hoàn tất
+        // Bước 5: Logistics nhập số cont / seal / ngày đóng cont.
+        const r = await svc.syncOrderInfo(1, { ...FULL, containerNo: 'MSKU1234567', sealNo: 'SEAL01', containerLoadingDate: '2026-10-05' });
+        assert.deepEqual(r, { fileFound: true, locked: true, updated: true });
+        const f = await row(1);
+        assert.equal(f.container_no, 'MSKU1234567');
+        assert.equal(f.seal_no, 'SEAL01');
+        assert.equal(f.container_loading_date, '2026-10-05');
+        assert.ok(f.qc_done_at, 'vẫn khoá, không bị mở lại');
+      });
 
-    it('CÙNG luật khoá với assertEditable: hồ sơ nào assertEditable chặn thì sync cũng chặn, và ngược lại', async () => {
-      const file = await create(1);
-      assert.equal(await completion.assertEditable({ qcFileId: file.ID }), undefined); // chưa khoá: không ném
-      assert.equal((await svc.syncOrderInfo(1, FULL)).locked, false);
-      await lock(1);
-      await assert.rejects(() => completion.assertEditable({ qcFileId: file.ID }), /KHÓA/);
-      assert.equal((await svc.syncOrderInfo(1, { ...FULL, unit: 'thùng' })).locked, true);
+      it('ghi đúng 9 cột: mọi cột khác, qc_done_at, qc_done_by giữ nguyên; updated_at được bump', async () => {
+        await create(1, { qcStaff: 'Lan' });
+        await lock(1);
+        await age(1);
+        const before = await others(1);
+        const r = await svc.syncOrderInfo(1, { ...FULL, poNo: 'HACK', qcStaff: 'HACK', contractNo: 'HACK' });
+        assert.deepEqual(r, { fileFound: true, locked: true, updated: true });
+        assert.deepEqual(await others(1), before);
+        const f = await row(1);
+        for (const c of NINE) assert.ok(f[c] !== null && f[c] !== '', c);
+        assert.notEqual(f.updated_epoch, OLD_EPOCH); // để trang đang mở GET lại
+      });
+
+      it('đơn rỗng KHÔNG xoá giá trị đã có (cả hai chế độ); không gì đổi thì updated=false, không bump updated_at', async () => {
+        await create(1);
+        await svc.syncOrderInfo(1, FULL);
+        await lock(1);
+        await age(1);
+        const empty = Object.fromEntries(Object.keys(FULL).map((k) => [k, '']));
+        for (const onlyFillEmpty of [true, false]) {
+          assert.deepEqual(await svc.syncOrderInfo(1, empty, { onlyFillEmpty }), { fileFound: true, locked: true, updated: false });
+        }
+        assert.deepEqual(await svc.syncOrderInfo(1, FULL), { fileFound: true, locked: true, updated: false });
+        const f = await row(1);
+        assert.equal(f.customer, 'Khách A');
+        assert.equal(f.container_no, 'MSKU1234567');
+        assert.equal(f.container_loading_date, '2026-10-05');
+        assert.equal(f.updated_epoch, OLD_EPOCH);
+      });
+
+      it('only_fill_empty vẫn tôn trọng: chữ QC đã gõ tay ở 4 ô không bị đè dù hồ sơ khoá; đơn thắng từ lần sau', async () => {
+        await create(1, { supplier: 'QC gõ tay', sealNo: 'TAY' });
+        await lock(1);
+        await svc.syncOrderInfo(1, FULL, { onlyFillEmpty: true });
+        let f = await row(1);
+        assert.equal(f.supplier, 'QC gõ tay');
+        assert.equal(f.seal_no, 'TAY');
+        assert.equal(f.container_no, 'MSKU1234567'); // ô trống -> điền
+        await svc.syncOrderInfo(1, FULL); // lần sau
+        f = await row(1);
+        assert.equal(f.supplier, 'Xưởng A');
+        assert.equal(f.seal_no, 'SEAL01');
+      });
+
+      it('Mở lại hồ sơ sau đó vẫn bình thường: locked=false, vẫn ghi', async () => {
+        await create(1);
+        await svc.syncOrderInfo(1, FULL);
+        await lock(1);
+        const id = (await row(1)).id;
+        await completion.reopenQC({ qcFileId: id });
+        const r = await svc.syncOrderInfo(1, { ...FULL, customer: 'Khách B' });
+        assert.deepEqual(r, { fileFound: true, locked: false, updated: true });
+        assert.equal((await row(1)).customer, 'Khách B');
+      });
+
+      it('khoá vẫn chặn phía HTTP (assertEditable) — và sync báo locked đúng theo cùng luật isLocked', async () => {
+        const file = await create(1);
+        assert.equal(await completion.assertEditable({ qcFileId: file.ID }), undefined); // chưa khoá: không ném
+        assert.equal((await svc.syncOrderInfo(1, FULL)).locked, false);
+        await lock(1);
+        await assert.rejects(() => completion.assertEditable({ qcFileId: file.ID }), /KHÓA/);
+        assert.deepEqual(await svc.syncOrderInfo(1, { ...FULL, unit: 'thùng' }), { fileFound: true, locked: true, updated: true });
+        assert.equal((await row(1)).unit, 'thùng');
+      });
     });
 
     it('chỉ hồ sơ đúng order_id đổi, hồ sơ khác nguyên vẹn', async () => {
@@ -403,6 +466,67 @@ describe('PLAN-0043 — đồng bộ đơn sang hồ sơ QC (DB thật)', { skip
     });
   });
 
+  // Router HTTP thật (express + routes/api.js) trên cổng tạm: khoá chỉ nới cho gRPC SyncOrderInfo / 9 ô thuộc đơn,
+  // còn đường HTTP của QC viên vẫn bị chặn nguyên (cả khi cờ chỉ-đọc tắt lẫn bật).
+  describe('HTTP updateQCFile qua router — hồ sơ khoá vẫn bị chặn', () => {
+    let httpServer, baseUrl, secretBefore;
+
+    before(async () => {
+      const { default: express } = await import('express');
+      const { default: apiRouter } = await import('../src/routes/api.js');
+      secretBefore = config.apiSecret;
+      config.apiSecret = ''; // router chỉ kiểm secret khi được cấu hình
+      const app = express();
+      app.use(express.json());
+      app.use('/api', apiRouter);
+      const port = await freePort();
+      httpServer = await new Promise((resolve) => { const s = app.listen(port, '127.0.0.1', () => resolve(s)); });
+      baseUrl = `http://127.0.0.1:${port}/api`;
+    });
+    after(async () => {
+      if (config) config.apiSecret = secretBefore;
+      if (httpServer) await new Promise((resolve) => httpServer.close(resolve));
+    });
+
+    const post = async (action, payload) => {
+      const res = await fetch(baseUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, payload }) });
+      return { status: res.status, body: await res.json() };
+    };
+
+    it('chưa khoá: updateQCFile sửa được (đối chứng — router chạy thật)', async () => {
+      const file = await create(1);
+      const { status, body } = await post('updateQCFile', { qcFileId: file.ID, poNo: 'AGO-MOI', customer: 'Sửa tay' });
+      assert.equal(status, 200);
+      assert.equal(body.ok, true);
+      assert.equal((await row(1)).customer, 'Sửa tay');
+    });
+
+    for (const flag of [false, true]) {
+      it(`khoá (cờ chỉ-đọc ${flag ? 'BẬT' : 'TẮT'}): updateQCFile bị chặn 400, dữ liệu nguyên vẹn dù gRPC vừa ghi 9 ô`, async () => {
+        config.orderFieldsReadonly = flag;
+        const file = await create(1, { qcStaff: 'Lan' });
+        await lock(1);
+        await svc.syncOrderInfo(1, FULL); // QC_SYNC vẫn ghi được vào hồ sơ khoá
+        const before = await row(1);
+
+        for (const payload of [
+          { poNo: 'AGO-MOI', qcStaff: 'HACK' },           // ô do QC sở hữu
+          { customer: 'Sửa tay', containerNo: 'TAY' },    // ô thuộc đơn: HTTP cũng không được ghi vào hồ sơ khoá
+          { customer: '', supplier: '', containerLoadingDate: '' }, // snapshot trống của FE cũ
+        ]) {
+          const { status, body } = await post('updateQCFile', { qcFileId: file.ID, ...payload });
+          assert.equal(status, 400);
+          assert.equal(body.ok, false);
+          assert.match(body.error, /KHÓA/);
+        }
+        const after = await row(1);
+        assert.deepEqual(after, before);
+        assert.equal(after.customer, 'Khách A');
+        assert.equal(after.container_no, 'MSKU1234567');
+      });
+    }
+  });
+
   describe('gRPC SyncOrderInfo (server thật, cổng tạm)', () => {
     const API_KEY = `test-${crypto.randomBytes(8).toString('hex')}`;
     let server, client, stopGrpc, logMock;
@@ -489,13 +613,20 @@ describe('PLAN-0043 — đồng bộ đơn sang hồ sơ QC (DB thật)', { skip
       assert.equal(f.container_no, 'MSKU1234567');
     });
 
-    it('hồ sơ khoá -> locked=true, không ghi', async () => {
+    it('hồ sơ khoá -> locked=true (chỉ để báo) và VẪN ghi 9 ô, qc_done_at giữ nguyên', async () => {
       await create(13);
       await lock(13);
+      const done = (await row(13)).qc_done_at;
       const { err, res } = await sync({ orderId: 13, ...FULL });
       assert.equal(err, null);
-      assert.deepEqual({ ...res }, { fileFound: true, locked: true, updated: false });
-      assert.equal((await row(13)).supplier ?? '', '');
+      assert.deepEqual({ ...res }, { fileFound: true, locked: true, updated: true });
+      const f = await row(13);
+      assert.equal(f.supplier, 'Xưởng A');
+      assert.equal(f.container_no, 'MSKU1234567');
+      assert.equal(f.container_loading_date, '2026-10-05');
+      assert.deepEqual(f.qc_done_at, done);
+      // gọi lại y hệt: không có gì đổi
+      assert.deepEqual({ ...(await sync({ orderId: 13, ...FULL })).res }, { fileFound: true, locked: true, updated: false });
     });
 
     it('ngày sai -> INVALID_ARGUMENT kèm lý do, không ghi gì', async () => {

@@ -16,6 +16,7 @@ service QCService {
   rpc CreateQC(CreateQCRequest) returns (CreateQCResponse);
 
   // Checklist đẩy thông tin đơn sang hồ sơ QC ĐÃ CÓ (một chiều). Trường chuỗi RỖNG = "đơn chưa có thông tin" → App QC KHÔNG ghi đè.
+  // 9 ô thuộc đơn LUÔN được ghi, kể cả khi hồ sơ đã khoá (Hoàn tất QC): luồng đơn tuần tự nên số cont / seal / ngày đóng cont tới SAU khi QC xong.
   rpc SyncOrderInfo(SyncOrderInfoRequest) returns (SyncOrderInfoResponse);
 }
 
@@ -75,6 +76,6 @@ message SyncOrderInfoRequest {
 
 message SyncOrderInfoResponse {
   bool file_found = 1;  // false: chưa có hồ sơ cho order_id này (không phải lỗi)
-  bool locked     = 2;  // true: hồ sơ đang khoá, KHÔNG ghi
-  bool updated    = 3;  // true: có ít nhất một ô đổi giá trị thật
+  bool locked     = 2;  // true: hồ sơ đang khoá (QC đã Hoàn tất) — CHỈ để báo; 9 ô thuộc đơn VẪN được ghi như hồ sơ đang mở
+  bool updated    = 3;  // true: có ít nhất một ô đổi giá trị thật (đã ghi, kể cả hồ sơ khoá)
 }

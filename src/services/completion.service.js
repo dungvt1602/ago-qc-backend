@@ -39,7 +39,7 @@ export async function assertEditable(p) {
   const id = await resolveQcFileId(p);
   if (!id) return;
   const f = await repo.findById(id);
-  if (isLocked(f)) { // luật khoá ở lib/lock.js — gRPC SyncOrderInfo dùng cùng hàm này
+  if (isLocked(f)) { // luật khoá ở lib/lock.js — gRPC SyncOrderInfo dùng cùng hàm này để báo `locked`
     throw new Error('Hồ sơ đã Hoàn tất QC nên đang KHÓA. Vào "Tổng quan" bấm "Mở lại" nếu thật sự cần sửa.');
   }
 }

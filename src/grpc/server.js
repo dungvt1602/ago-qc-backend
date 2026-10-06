@@ -101,7 +101,7 @@ async function createQC(orderId, r) {
 }
 
 // Checklist đẩy thông tin đơn sang hồ sơ ĐÃ CÓ (một chiều đơn -> QC, PLAN-0043).
-// Chuỗi rỗng = "đơn chưa có thông tin" nên không ghi đè; hồ sơ khoá -> locked=true, không ghi.
+// Chuỗi rỗng = "đơn chưa có thông tin" nên không ghi đè; hồ sơ khoá vẫn ghi 9 ô thuộc đơn (locked=true chỉ để báo).
 // Luật chọn ô cần ghi nằm ở lib/orderSync.js, luật khoá ở lib/lock.js.
 async function syncOrderInfo(orderId, r) {
   return syncOrderInfoToFile(orderId, {

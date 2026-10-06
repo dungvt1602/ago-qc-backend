@@ -49,6 +49,7 @@ service QCService {
   rpc CreateQC(CreateQCRequest) returns (CreateQCResponse);
 
   // Checklist đẩy thông tin đơn sang hồ sơ QC ĐÃ CÓ (một chiều). Trường chuỗi RỖNG = "đơn chưa có thông tin" → App QC KHÔNG ghi đè.
+  // 9 ô thuộc đơn LUÔN được ghi, kể cả khi hồ sơ đã khoá (Hoàn tất QC): luồng đơn tuần tự nên số cont / seal / ngày đóng cont tới SAU khi QC xong.
   rpc SyncOrderInfo(SyncOrderInfoRequest) returns (SyncOrderInfoResponse);
 }
 
@@ -108,8 +109,8 @@ message SyncOrderInfoRequest {
 
 message SyncOrderInfoResponse {
   bool file_found = 1;  // false: chưa có hồ sơ cho order_id này (không phải lỗi)
-  bool locked     = 2;  // true: hồ sơ đang khoá, KHÔNG ghi
-  bool updated    = 3;  // true: có ít nhất một ô đổi giá trị thật
+  bool locked     = 2;  // true: hồ sơ đang khoá (QC đã Hoàn tất) — CHỈ để báo; 9 ô thuộc đơn VẪN được ghi như hồ sơ đang mở
+  bool updated    = 3;  // true: có ít nhất một ô đổi giá trị thật (đã ghi, kể cả hồ sơ khoá)
 }
 ```
 
@@ -166,7 +167,7 @@ Checklist                          App QC
 - Đơn chưa có hồ sơ → `{photo_count: 0, done: false}`, **không** lỗi `NOT_FOUND` (đúng hợp đồng).
 - `done` là "đã làm xong việc kiểm", **không** phải đạt/không đạt.
 - `done` **có thể quay về `false`**: QC viên được phép "Mở lại" hồ sơ để sửa (có xác nhận), sau đó phải Hoàn tất lại. Đừng cache `done = true` lâu phía checklist.
-- Sau khi Hoàn tất, App QC **khóa** hồ sơ (không chụp/xóa/sửa) để bằng chứng không đổi sau khi đơn đã đóng.
+- Sau khi Hoàn tất, App QC **khóa** hồ sơ (không chụp/xóa/sửa) để bằng chứng không đổi sau khi đơn đã đóng. Ngoại lệ DUY NHẤT: 9 ô thuộc đơn do checklist đồng bộ qua `SyncOrderInfo` (mục 4c) vẫn được cập nhật khi hồ sơ khoá.
 
 ### Mã lỗi gRPC
 | Tình huống | Status |
@@ -222,7 +223,7 @@ QC viên nhập thông tin ở đơn một lần, các ô trùng bên "Thông ti
 | `only_fill_empty = false` | Cả 9 ô: ghi ô nào **khác** giá trị hiện tại (đơn thắng). |
 | Không ô nào đổi | **Không** chạy UPDATE, không đổi `updated_at` (`updated=false`) — gọi lại bao nhiêu lần cũng vô hại. |
 | Hồ sơ chưa có cho `order_id` | `file_found=false` (không phải lỗi). |
-| Hồ sơ đã **Hoàn tất QC** (đang khoá, cùng luật với các thao tác sửa trong app) | `locked=true`, **không ghi**. QC "Mở lại" hồ sơ thì lần gọi sau sẽ ghi. |
+| Hồ sơ đã **Hoàn tất QC** (đang khoá, cùng luật với các thao tác sửa trong app) | **Vẫn ghi** 9 ô thuộc đơn như hồ sơ đang mở (owner chốt 2026-10-06: ô nào đồng nhất được với đơn thì phải đồng nhất để QC khỏi nhập lại; luồng đơn tuần tự — QC xong rồi Logistics mới nhập số cont / seal / ngày đóng cont — nên khoá mà chặn thì ba ô đó không bao giờ về). `locked=true` trong response chỉ để **báo** "hồ sơ đang khoá"; `updated` cho biết có ghi thật không. Chỉ đúng 9 cột này: không ô nào khác, **không** đổi `qc_done_at` / trạng thái / kết luận QC. Khoá vẫn áp nguyên cho HTTP `updateQCFile` và mọi ô do QC sở hữu. |
 | `container_loading_date` | `yyyy-MM-dd` (giờ VN) hoặc `""`. Sai định dạng / không phải ngày thật → `INVALID_ARGUMENT`. |
 | Chuỗi chứa ký tự NUL (U+0000) | `INVALID_ARGUMENT` (Postgres TEXT không lưu được); thử lại cũng vô ích. |
 
