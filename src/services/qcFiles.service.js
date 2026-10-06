@@ -212,7 +212,8 @@ export async function updateQCFile(p) {
 // qc_done_at / trạng thái / kết luận QC. Khoá vẫn áp cho HTTP updateQCFile và mọi ô do QC sở hữu (routes/api.js).
 // Ngày sai định dạng -> InvalidOrderInfoError (mã INVALID_ARGUMENT), kiểm TRƯỚC khi đụng DB.
 // onWrite({ columns, locked }) (tuỳ chọn): gọi SAU khi UPDATE xong — chỉ TÊN cột đã ghi, không bao giờ giá trị;
-//   tầng gRPC dùng để log vết khi một hồ sơ ĐÃ KHOÁ nhận dữ liệu từ đơn.
+//   tầng gRPC dùng để log vết khi một hồ sơ ĐÃ KHOÁ nhận dữ liệu từ đơn. Callback chỉ là phụ trợ: nó ném lỗi thì
+//   chỉ console.warn — dữ liệu ĐÃ ghi nên RPC không được báo INTERNAL (checklist sẽ không ghi hash, mất luôn tin realtime).
 export async function syncOrderInfo(orderId, info, { onlyFillEmpty = false, onWrite } = {}) {
   const incoming = normalizeOrderInfo(info);
   const file = await repo.findByOrderId(orderId);
@@ -223,7 +224,13 @@ export async function syncOrderInfo(orderId, info, { onlyFillEmpty = false, onWr
   if (Object.keys(updates).length === 0) return { fileFound: true, locked, updated: false };
 
   await repo.update(file.id, updates);
-  if (onWrite) onWrite({ columns: Object.keys(updates), locked });
+  if (onWrite) {
+    try {
+      onWrite({ columns: Object.keys(updates), locked });
+    } catch (err) {
+      console.warn(`[sync] onWrite lỗi (bỏ qua, dữ liệu đã ghi) order=${orderId}:`, err);
+    }
+  }
   return { fileFound: true, locked, updated: true };
 }
 

@@ -312,6 +312,21 @@ describe('PLAN-0043 — đồng bộ đơn sang hồ sơ QC (DB thật)', { skip
         assert.equal(seen.length, 1);
       });
 
+      it('onWrite ném lỗi: dữ liệu ĐÃ ghi nên kết quả vẫn đúng (updated=true, không văng lỗi), chỉ console.warn', async () => {
+        await create(1);
+        await lock(1);
+        const warn = mock.method(console, 'warn', () => {});
+        let r;
+        try {
+          r = await svc.syncOrderInfo(1, { customer: 'Khách A', containerNo: 'MSKU1234567' }, { onWrite: () => { throw new Error('log hỏng'); } });
+        } finally { warn.mock.restore(); }
+        assert.deepEqual(r, { fileFound: true, locked: true, updated: true });
+        assert.equal(warn.mock.callCount(), 1);
+        const f = await row(1);
+        assert.equal(f.customer, 'Khách A');
+        assert.equal(f.container_no, 'MSKU1234567');
+      });
+
       it('Mở lại hồ sơ sau đó vẫn bình thường: locked=false, vẫn ghi', async () => {
         await create(1);
         await svc.syncOrderInfo(1, FULL);
