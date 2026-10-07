@@ -8,7 +8,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from '../config/env.js';
 import * as repo from '../repositories/qcFiles.repo.js';
-import { findOrCreateForOrder, getQCFile } from '../services/qcFiles.service.js';
+import { InvalidOrderInfoError } from '../lib/orderSync.js';
+import { findOrCreateForOrder, getQCFile, syncOrderInfo as syncOrderInfoToFile } from '../services/qcFiles.service.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROTO_PATH = path.resolve(__dirname, '../../proto/qc/v1/qc.proto');
@@ -26,6 +27,15 @@ function keyMatches(given, expected) {
   if (typeof given !== 'string' || !expected) return false;
   const a = Buffer.from(given), b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// Lỗi handler CHỦ ĐỘNG ném cho client thấy: có .grpcCode hợp lệ (1..16; 0 = OK nên không tính) VÀ được đánh dấu
+// công khai (InvalidOrderInfoError hoặc expose === true). Chỉ loại này mới được trả message nguyên văn; mọi lỗi
+// khác — kể cả lỗi lạ tình cờ có .grpcCode — vẫn là INTERNAL với câu cố định, không lộ chi tiết nội bộ.
+function isExposedError(err) {
+  return Boolean(err)
+    && (err instanceof InvalidOrderInfoError || err.expose === true)
+    && Number.isInteger(err.grpcCode) && err.grpcCode >= 1 && err.grpcCode <= 16;
 }
 
 // Bọc chung cho mọi RPC: kiểm khóa -> kiểm order_id -> chạy -> ghi log -> đổi lỗi sang mã gRPC.
@@ -48,6 +58,12 @@ function rpc(name, apiKey, handler) {
       log(JSON.stringify(result));
       callback(null, result);
     } catch (err) {
+      // Lỗi CỐ Ý của handler (vd ngày sai định dạng) -> trả đúng mã .grpcCode kèm câu của lỗi.
+      // Mọi lỗi khác (DB, bug...) vẫn là INTERNAL và KHÔNG lộ chi tiết ra ngoài.
+      if (isExposedError(err)) {
+        log(grpc.status[err.grpcCode] ?? String(err.grpcCode)); // KHÔNG log nội dung request
+        return callback({ code: err.grpcCode, details: String(err.message || '') });
+      }
       console.error(`[gRPC] ${name} order=${orderId} LỖI:`, err);
       callback({ code: grpc.status.INTERNAL, details: 'lỗi nội bộ App QC' });
     }
@@ -84,6 +100,27 @@ async function createQC(orderId, r) {
   return { qcFileId: qcFile.ID, lotCode: qcFile.LOT_CODE, created };
 }
 
+// Checklist đẩy thông tin đơn sang hồ sơ ĐÃ CÓ (một chiều đơn -> QC, PLAN-0043).
+// Chuỗi rỗng = "đơn chưa có thông tin" nên không ghi đè; hồ sơ khoá vẫn ghi 9 ô thuộc đơn (locked=true chỉ để báo).
+// Luật chọn ô cần ghi nằm ở lib/orderSync.js, luật khoá ở lib/lock.js.
+// writes_when_locked (trường 4) = true MỖI KHI file_found: bản App QC này biết ghi cả hồ sơ khoá. Checklist dựa vào
+// cờ đó để phân biệt với bản cũ (thấy khoá thì không ghi, không có trường này) — thiếu cờ mà locked thì nó KHÔNG
+// coi là đã đồng bộ. Đừng bỏ cờ, và đừng đặt nó theo điều kiện nào khác.
+async function syncOrderInfo(orderId, r) {
+  const res = await syncOrderInfoToFile(orderId, {
+    customer: r.customer, productName: r.productName, specification: r.specification,
+    poQuantity: r.quantity, unit: r.unit, supplier: r.supplier,
+    containerNo: r.containerNo, sealNo: r.sealNo, containerLoadingDate: r.containerLoadingDate,
+  }, {
+    onlyFillEmpty: r.onlyFillEmpty,
+    // Hồ sơ ĐÃ KHOÁ mà vẫn nhận dữ liệu từ đơn: log TÊN cột đã ghi (KHÔNG log giá trị) để truy vết ai đổi gì.
+    onWrite: ({ columns, locked }) => {
+      if (locked) console.log(`[gRPC] SyncOrderInfo order=${orderId} hồ sơ ĐÃ KHOÁ nhận dữ liệu từ đơn, cột đã ghi: ${columns.join(', ')}`);
+    },
+  });
+  return { ...res, writesWhenLocked: res.fileFound };
+}
+
 // Bật server. Trả về server (để tắt gọn khi shutdown) hoặc null nếu chưa cấu hình khóa.
 // opts cho phép test ghi đè cổng/khóa mà không đụng biến môi trường.
 export function startGrpc(opts = {}) {
@@ -98,6 +135,7 @@ export function startGrpc(opts = {}) {
   server.addService(loadQCService().service, {
     GetStatus: rpc('GetStatus', apiKey, getStatus),
     CreateQC: rpc('CreateQC', apiKey, createQC),
+    SyncOrderInfo: rpc('SyncOrderInfo', apiKey, syncOrderInfo),
   });
 
   return new Promise((resolve, reject) => {

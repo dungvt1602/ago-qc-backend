@@ -9,6 +9,8 @@ import { todayStr, dateCompact, sanitizeCode } from '../lib/util.js';
 import { removeFiles, removeFolder } from '../lib/storage.js';
 import { config } from '../config/env.js';
 import { photoProgress } from '../lib/progress.js';
+import { isLocked } from '../lib/lock.js';
+import { normalizeOrderInfo, selectFieldsToWrite, stripOrderOwnedKeys } from '../lib/orderSync.js';
 
 // Trả về danh mục cố định (frontend hiện chưa dùng, giữ cho đủ "hợp đồng" cũ).
 export function setupInfo() {
@@ -166,17 +168,70 @@ const FIELD_MAP = {
 };
 const DATE_FIELDS = new Set(['start_date', 'est_finish_date', 'container_loading_date']);
 
-export async function updateQCFile(p) {
+// Gom payload HTTP thành { cột: giá trị } sẽ ghi. THUẦN (không DB, không đọc cấu hình) để test được.
+// stripOrderOwned = bỏ âm thầm 9 ô do đơn sở hữu khỏi payload (ô chỉ-đọc) — snapshot cũ mà frontend gửi lên
+// không thể đè giá trị đơn vừa đẩy sang (PLAN-0043). false = hành vi cũ, ghi mọi khoá có trong payload.
+export function buildFileUpdates(p, stripOrderOwned) {
+  const payload = stripOrderOwned ? stripOrderOwnedKeys(p) : p;
   const updates = {};
   for (const [camel, col] of Object.entries(FIELD_MAP)) {
-    if (camel in p) {
-      let val = p[camel];
+    if (camel in payload) {
+      let val = payload[camel];
       if (DATE_FIELDS.has(col) && val === '') val = null; // tránh lỗi ép '' -> date
       updates[col] = val;
     }
   }
-  await repo.update(p.qcFileId, updates);
+  return updates;
+}
+
+// Cờ QC_ORDER_FIELDS_READONLY TẮT (mặc định) -> chạy y như trước PLAN-0043 cho MỌI hồ sơ (không thêm truy vấn nào).
+// Cờ BẬT -> hồ sơ có order_id bị bỏ 9 ô do đơn sở hữu; hồ sơ tạo tay (không order_id) vẫn như cũ.
+// Đọc config lúc gọi (không chốt lúc nạp module) để test bật/tắt được.
+export async function updateQCFile(p) {
+  let stripOrderOwned = false;
+  if (config.orderFieldsReadonly) {
+    const orderId = await repo.findOrderIdById(p.qcFileId);
+    stripOrderOwned = orderId !== null && orderId !== undefined;
+  }
+  await repo.update(p.qcFileId, buildFileUpdates(p, stripOrderOwned));
   return getQCFile(p.qcFileId);
+}
+
+// Backend checklist đẩy thông tin đơn sang (gRPC SyncOrderInfo, MỘT CHIỀU đơn -> QC).
+// info: { customer, productName, specification, poQuantity, unit, supplier, containerNo, sealNo,
+//         containerLoadingDate } — chuỗi rỗng = "đơn chưa có thông tin" nên KHÔNG BAO GIỜ xoá ô bên QC.
+// onlyFillEmpty: lần đồng bộ đầu của hồ sơ. CHỈ áp cho 4 ô QC có thể đã gõ tay (supplier, container_no,
+//   seal_no, container_loading_date: chỉ điền khi còn trống); 5 ô còn lại luôn đồng bộ (xem ORDER_OWNED_FIELDS).
+// Trả { fileFound, locked, updated }:
+//   - chưa có hồ sơ cho order_id  -> fileFound=false (không phải lỗi);
+//   - locked = hồ sơ đang khoá (cùng luật isLocked với assertEditable) — CHỈ để BÁO, KHÔNG chặn ghi:
+//     9 ô thuộc đơn LUÔN được ghi, kể cả hồ sơ đã Hoàn tất QC (owner chốt 2026-10-06: luồng đơn tuần tự — QC xong
+//     rồi Logistics mới nhập số cont / seal / ngày đóng cont — nên khoá mà chặn thì ba ô đó không bao giờ về tới QC);
+//   - không ô nào đổi -> KHÔNG chạy UPDATE (updated_at bị bump sẽ làm form frontend remount, mất chữ đang gõ).
+// Chỉ 9 cột của ORDER_OWNED_FIELDS bị ghi (selectFieldsToWrite chỉ xét chúng): KHÔNG đụng cột nào khác, KHÔNG đổi
+// qc_done_at / trạng thái / kết luận QC. Khoá vẫn áp cho HTTP updateQCFile và mọi ô do QC sở hữu (routes/api.js).
+// Ngày sai định dạng -> InvalidOrderInfoError (mã INVALID_ARGUMENT), kiểm TRƯỚC khi đụng DB.
+// onWrite({ columns, locked }) (tuỳ chọn): gọi SAU khi UPDATE xong — chỉ TÊN cột đã ghi, không bao giờ giá trị;
+//   tầng gRPC dùng để log vết khi một hồ sơ ĐÃ KHOÁ nhận dữ liệu từ đơn. Callback chỉ là phụ trợ: nó ném lỗi thì
+//   chỉ console.warn — dữ liệu ĐÃ ghi nên RPC không được báo INTERNAL (checklist sẽ không ghi hash, mất luôn tin realtime).
+export async function syncOrderInfo(orderId, info, { onlyFillEmpty = false, onWrite } = {}) {
+  const incoming = normalizeOrderInfo(info);
+  const file = await repo.findByOrderId(orderId);
+  if (!file) return { fileFound: false, locked: false, updated: false };
+  const locked = isLocked(file);
+
+  const updates = selectFieldsToWrite(file, incoming, { onlyFillEmpty });
+  if (Object.keys(updates).length === 0) return { fileFound: true, locked, updated: false };
+
+  await repo.update(file.id, updates);
+  if (onWrite) {
+    try {
+      onWrite({ columns: Object.keys(updates), locked });
+    } catch (err) {
+      console.warn(`[sync] onWrite lỗi (bỏ qua, dữ liệu đã ghi) order=${orderId}:`, err);
+    }
+  }
+  return { fileFound: true, locked, updated: true };
 }
 
 const SUMMARY_MAP = {

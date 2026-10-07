@@ -2,7 +2,9 @@
 
 Tài liệu cho đội backend checklist (Go). Bổ sung cho `docs/qc-app-grpc-contract.md` phía các bạn:
 App QC **đã implement xong** `GetStatus` như hợp đồng, và **đề xuất thêm 1 RPC `CreateQC`** để hai bên
-khớp đơn với nhau tự động (xem mục 3 — vì sao bắt buộc phải có).
+khớp đơn với nhau tự động (xem mục 3 — vì sao bắt buộc phải có). Sau đó thêm RPC thứ ba **`SyncOrderInfo`**
+để checklist đẩy thông tin đơn (nơi sản xuất, số cont, seal, ngày đóng cont, khách, hàng) sang hồ sơ QC
+đã có — xem mục 4c.
 
 ---
 
@@ -16,7 +18,7 @@ Hai backend nằm **cùng workspace Render, cùng region Singapore** → dùng *
 | Địa chỉ | `ago-qc-backend:50051` (tên service = hostname nội bộ) |
 | Giao thức | gRPC plaintext (`insecure`) |
 | Xác thực | metadata `x-api-key: <khóa>` trên **mọi** call — thiếu/sai → `UNAUTHENTICATED` |
-| Deadline khuyến nghị | 3 giây (`GetStatus` thực tế < 100 ms) |
+| Deadline khuyến nghị | 3 giây cho `GetStatus` / `CreateQC` (`GetStatus` thực tế < 100 ms). `SyncOrderInfo` chạy nền (không nằm trong request của người dùng) nên đặt **~30 giây** (`QC_SYNC_TIMEOUT` bên Go): phòng khi App QC đang khởi động nguội hoặc vừa deploy, có thể mất 30–60 giây |
 
 Biến môi trường cần đặt trên **`ago-order-api`**:
 
@@ -45,6 +47,10 @@ service QCService {
   // Checklist tạo hồ sơ QC (hàng xuất) cho đơn, điền sẵn thông tin cơ bản.
   // IDEMPOTENT: gọi lại với cùng order_id -> trả hồ sơ đã có, created = false. Không bao giờ tạo trùng.
   rpc CreateQC(CreateQCRequest) returns (CreateQCResponse);
+
+  // Checklist đẩy thông tin đơn sang hồ sơ QC ĐÃ CÓ (một chiều). Trường chuỗi RỖNG = "đơn chưa có thông tin" → App QC KHÔNG ghi đè.
+  // 9 ô thuộc đơn LUÔN được ghi, kể cả khi hồ sơ đã khoá (Hoàn tất QC): luồng đơn tuần tự nên số cont / seal / ngày đóng cont tới SAU khi QC xong.
+  rpc SyncOrderInfo(SyncOrderInfoRequest) returns (SyncOrderInfoResponse);
 }
 
 message GetStatusRequest {
@@ -86,9 +92,30 @@ message CreateQCResponse {
   string lot_code   = 2;  // mã lô, vd QC-AGO2609-20260915
   bool   created    = 3;  // true = vừa tạo mới; false = đã có từ trước (gọi lại)
 }
+
+message SyncOrderInfoRequest {
+  int64  order_id               = 1;   // bắt buộc, > 0
+  string customer               = 2;
+  string product_name           = 3;
+  string specification          = 4;
+  string quantity               = 5;
+  string unit                   = 6;
+  string supplier               = 7;   // nơi sản xuất / nhà đóng gói
+  string container_no           = 8;
+  string seal_no                = 9;
+  string container_loading_date = 10;  // yyyy-MM-dd (giờ VN) hoặc ""
+  bool   only_fill_empty        = 11;  // true: lần đồng bộ đầu — 4 ô QC có thể đã gõ tay (supplier, container_no, seal_no, container_loading_date) chỉ điền khi còn trống; 5 ô còn lại luôn đồng bộ
+}
+
+message SyncOrderInfoResponse {
+  bool file_found         = 1;  // false: chưa có hồ sơ cho order_id này (không phải lỗi)
+  bool locked             = 2;  // true: hồ sơ đang khoá (QC đã Hoàn tất) — CHỈ để báo; 9 ô thuộc đơn VẪN được ghi như hồ sơ đang mở
+  bool updated            = 3;  // true: có ít nhất một ô đổi giá trị thật (đã ghi, kể cả hồ sơ khoá)
+  bool writes_when_locked = 4;  // true: App QC bản ghi cả hồ sơ khoá — bản mới LUÔN đặt true khi file_found. Bản cũ không có trường này (vắng = false): thấy locked mà không có cờ này thì checklist coi là App QC cũ (chưa ghi) và KHÔNG lưu hash
+}
 ```
 
-Tên RPC trên đường dây: `/ago.qc.v1.QCService/GetStatus` và `/ago.qc.v1.QCService/CreateQC`.
+Tên RPC trên đường dây: `/ago.qc.v1.QCService/GetStatus`, `/ago.qc.v1.QCService/CreateQC` và `/ago.qc.v1.QCService/SyncOrderInfo`.
 
 ---
 
@@ -126,7 +153,7 @@ Checklist                          App QC
 |---|---|
 | `order_id` | ID số của đơn. **Unique** bên App QC: mỗi đơn đúng 1 hồ sơ. |
 | `po_no` | Dùng để sinh mã lô `QC-{PO}-{yyyyMMdd}` (tự thêm `-02`, `-03` nếu trùng ngày). Trống → `NOPO`. |
-| `product_name`, `specification`, `quantity`, `unit`, `customer`, `contract_no` | Điền sẵn vào mục "Thông tin lô hàng". QC viên sửa được sau. Đều được phép trống. |
+| `product_name`, `specification`, `quantity`, `unit`, `customer`, `contract_no` | Điền sẵn vào mục "Thông tin lô hàng". Đều được phép trống. `contract_no` QC viên sửa tự do. **Năm ô `product_name`, `specification`, `quantity`, `unit`, `customer` không còn tự do sửa tay** khi App QC bật cờ `QC_ORDER_FIELDS_READONLY` (mục 4c): trên hồ sơ có `order_id` chúng do **đơn** đồng bộ sang, sửa ở đơn. |
 
 - Hồ sơ tạo ra luôn là loại **hàng xuất** (EXPORT).
 - **Idempotent**: gọi lại (retry sau timeout, gọi trùng…) → trả đúng hồ sơ cũ, `created = false`. Hai lệnh tạo tới cùng lúc cũng chỉ ra 1 hồ sơ.
@@ -141,13 +168,14 @@ Checklist                          App QC
 - Đơn chưa có hồ sơ → `{photo_count: 0, done: false}`, **không** lỗi `NOT_FOUND` (đúng hợp đồng).
 - `done` là "đã làm xong việc kiểm", **không** phải đạt/không đạt.
 - `done` **có thể quay về `false`**: QC viên được phép "Mở lại" hồ sơ để sửa (có xác nhận), sau đó phải Hoàn tất lại. Đừng cache `done = true` lâu phía checklist.
-- Sau khi Hoàn tất, App QC **khóa** hồ sơ (không chụp/xóa/sửa) để bằng chứng không đổi sau khi đơn đã đóng.
+- Sau khi Hoàn tất, App QC **khóa** hồ sơ (không chụp/xóa/sửa) để bằng chứng không đổi sau khi đơn đã đóng. Ngoại lệ DUY NHẤT: 9 ô thuộc đơn do checklist đồng bộ qua `SyncOrderInfo` (mục 4c) vẫn được cập nhật khi hồ sơ khoá.
 
 ### Mã lỗi gRPC
 | Tình huống | Status |
 |---|---|
 | Thiếu / sai `x-api-key` | `UNAUTHENTICATED` (16) |
 | `order_id` ≤ 0 hoặc không phải số nguyên | `INVALID_ARGUMENT` (3) |
+| `SyncOrderInfo`: `container_loading_date` không phải ngày thật dạng `yyyy-MM-dd`, hoặc có chuỗi chứa ký tự NUL | `INVALID_ARGUMENT` (3) — câu lỗi cố định, không in lại dữ liệu |
 | Lỗi nội bộ App QC (DB…) | `INTERNAL` (13) — checklist nên chặn hoàn tất sản xuất như hợp đồng đã ghi |
 | `GetStatus` đơn chưa có hồ sơ | **OK** với `{0, false}` |
 
@@ -178,6 +206,45 @@ Kết quả `grpcurl` mong đợi (hàng xuất, 1 đợt, đã hoàn tất):
   "groups": [ { "name": "QC ngày", "count": 6, "total": 6 }, { "name": "Container", "count": 21, "total": 21 } ]
 }
 ```
+
+## 4c. `SyncOrderInfo` — đồng bộ thông tin đơn sang hồ sơ QC (PLAN-0043)
+
+Checklist **đẩy** thông tin đơn sang hồ sơ QC **đã có**, một chiều đơn → QC (đơn là nguồn sự thật).
+QC viên nhập thông tin ở đơn một lần, các ô trùng bên "Thông tin lô hàng" tự cập nhật.
+
+9 ô **do đơn sở hữu**: `customer`, `product_name`, `specification`, `quantity` (→ SL), `unit`, `supplier`,
+`container_no`, `seal_no`, `container_loading_date`. Các ô khác (`po_no`, `supplier_code`, `contract_no`,
+`est_finish_date`, `qc_staff`...) **không** thuộc RPC này.
+
+| Quy tắc | Hành vi |
+|---|---|
+| Giá trị rỗng / toàn khoảng trắng | **Bỏ qua**, không bao giờ xoá ô bên QC. Giá trị có chữ được `trim` trước khi so/ghi. |
+| `only_fill_empty = true` | Lần đồng bộ đầu, **chỉ áp cho 4 ô** QC có thể đã gõ tay vì trước đây không có nguồn từ đơn: `supplier`, `container_no`, `seal_no`, `container_loading_date` — chỉ ghi khi ô QC đang trống (NULL, `''` hoặc toàn khoảng trắng), không đè chữ QC viên đã gõ. |
+| 5 ô còn lại (`customer`, `product_name`, `specification`, `quantity`, `unit`) | **Luôn** ghi khi giá trị đơn có chữ và **khác** giá trị hiện tại, kể cả lần đầu (các ô này vốn do đơn gieo lúc `CreateQC`, nên hồ sơ tạo trước khi đơn được sửa không kẹt giá trị cũ). |
+| `only_fill_empty = false` | Cả 9 ô: ghi ô nào **khác** giá trị hiện tại (đơn thắng). |
+| Không ô nào đổi | **Không** chạy UPDATE, không đổi `updated_at` (`updated=false`) — gọi lại bao nhiêu lần cũng vô hại. |
+| Hồ sơ chưa có cho `order_id` | `file_found=false` (không phải lỗi). |
+| Hồ sơ đã **Hoàn tất QC** (đang khoá, cùng luật với các thao tác sửa trong app) | **Vẫn ghi** 9 ô thuộc đơn như hồ sơ đang mở (owner chốt 2026-10-06: ô nào đồng nhất được với đơn thì phải đồng nhất để QC khỏi nhập lại; luồng đơn tuần tự — QC xong rồi Logistics mới nhập số cont / seal / ngày đóng cont — nên khoá mà chặn thì ba ô đó không bao giờ về). `locked=true` trong response chỉ để **báo** "hồ sơ đang khoá"; `updated` cho biết có ghi thật không. Chỉ đúng 9 cột này: không ô nào khác, **không** đổi `qc_done_at` / trạng thái / kết luận QC. Khoá vẫn áp nguyên cho HTTP `updateQCFile` và mọi ô do QC sở hữu. Mỗi lần ghi vào hồ sơ khoá App QC log TÊN cột đã ghi (không log giá trị). |
+| Cờ `writes_when_locked` (trường 4 của response) | App QC bản này **luôn đặt `true` khi `file_found`** (hồ sơ mở lẫn khoá, có ghi hay không). Checklist dùng nó làm cầu chì: bản App QC cũ không biết trường này (proto3: vắng = `false`) và thấy khoá thì không ghi, nên `file_found && locked && !writes_when_locked` = "dữ liệu CHƯA được ghi" — checklist KHÔNG lưu hash, hoãn 1 giờ, báo `QC_APP_OUTDATED`. **Đừng bỏ cờ này hay đặt nó theo điều kiện khác.** Tương thích dây hai chiều (proto3 bỏ qua trường lạ). |
+| `container_loading_date` | `yyyy-MM-dd` (giờ VN) hoặc `""`. Sai định dạng / không phải ngày thật → `INVALID_ARGUMENT`. |
+| Chuỗi chứa ký tự NUL (U+0000) | `INVALID_ARGUMENT` (Postgres TEXT không lưu được); thử lại cũng vô ích. |
+
+**Cờ `QC_ORDER_FIELDS_READONLY`** (biến môi trường của **App QC**, mặc định **TẮT**; bật bằng `true`/`1`/`yes`/`on`):
+- **Tắt**: HTTP `updateQCFile` chạy y như trước đây cho mọi hồ sơ.
+- **Bật**: với hồ sơ có `order_id`, 9 ô trên là **chỉ-đọc** — `updateQCFile` âm thầm bỏ các khoá đó khỏi payload, nên
+  snapshot cũ của frontend không thể đè giá trị đơn vừa đẩy sang. Hồ sơ tạo tay (không `order_id`) giữ nguyên hành vi cũ.
+- `SyncOrderInfo` **không** bị cờ này chi phối.
+- Owner chỉ bật cờ **sau khi đợt đồng bộ đầu đã chạy xong** (checklist bật `QC_SYNC_ENABLED`, mọi hồ sơ có `qc_synced_at`).
+  Bật sớm hơn thì chữ QC gõ vào 9 ô bị bỏ mà chưa có gì điền thay.
+
+```bash
+grpcurl -plaintext -proto proto/qc/v1/qc.proto \
+  -H "x-api-key: $QC_APP_API_KEY" \
+  -d '{"order_id": 2, "supplier": "Nhà đóng gói A", "container_no": "MSKU1234567", "container_loading_date": "2026-10-05", "only_fill_empty": true}' \
+  ago-qc-backend:50051 ago.qc.v1.QCService/SyncOrderInfo
+```
+
+---
 
 ## 5. Gọi từ Go (mẫu)
 

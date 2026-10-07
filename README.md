@@ -12,6 +12,8 @@ src/
 │   ├── db.js              Pool kết nối PostgreSQL + helper query/transaction
 │   ├── storage.js         Upload/tải ảnh & PDF trên Supabase Storage
 │   ├── rows.js            Đổi cột DB (snake_case) -> khóa API (UPPER_CASE)
+│   ├── lock.js            Luật khóa hồ sơ sau "Hoàn tất QC" (HTTP chặn sửa; gRPC SyncOrderInfo chỉ dùng để báo `locked`)
+│   ├── orderSync.js       Đồng bộ thông tin đơn -> hồ sơ QC: 9 ô do đơn sở hữu + hàm chọn ô cần ghi (thuần)
 │   └── util.js            Tiện ích ngày giờ, làm sạch chuỗi, chunk
 ├── data/catalog.js        6 hạng mục QC ngày + 21 ảnh container
 ├── repositories/          Câu lệnh SQL thuần (chỉ đụng DB)
@@ -38,6 +40,7 @@ src/
 ├── grpc/server.js         gRPC cho backend checklist (xem docs/grpc-handover.md)
 └── routes/api.js          Router: POST { action, payload } -> service
 db/schema.sql              Schema PostgreSQL (chạy trong Supabase)
+test/                      Test `node --test` (npm test): hàm thuần + SQL/gRPC thật (cần TEST_DATABASE_URL)
 ```
 
 **Triết lý phân tầng:** `routes` (nhận request) → `services` (logic) → `repositories` (SQL).
@@ -103,6 +106,16 @@ npm run dev              # chạy với tự động reload
 
 Mở http://localhost:8080 thấy `{ ok: true }` là server sống.
 
+### Chạy test
+
+```bash
+npm test                 # node --test (không thêm thư viện); test thuần chạy ngay, không cần DB/mạng
+```
+
+Test SQL/gRPC thật (đồng bộ thông tin đơn sang hồ sơ QC) chỉ chạy khi đặt `TEST_DATABASE_URL` trỏ vào một DB
+**riêng để test** (tên DB phải có `test` thành một đoạn riêng, vd `qc_sync_test`; test sẽ TRUNCATE `qc_files`; schema
+được nạp tự động). Không đặt thì phần đó tự bỏ qua. Không cần Supabase thật.
+
 ### Chuẩn bị Supabase trước khi chạy
 1. Tạo project Supabase.
 2. SQL Editor → dán nội dung `db/schema.sql` → Run.
@@ -139,10 +152,23 @@ POST `/api` với body `{ action, payload }`, trả về `{ ok, result }`.
 | listQCFiles | — |
 | createQCFile | poNo, productName, qcStaff, ... |
 | getQCFile | qcFileId |
-| updateQCFile | qcFileId, + các trường thông tin |
+| updateQCFile | qcFileId, + các trường thông tin (khi bật `QC_ORDER_FIELDS_READONLY`: hồ sơ có `order_id` bị bỏ 9 ô do đơn sở hữu khỏi payload — xem bên dưới) |
 | updateSummary | qcFileId, + các trường thống kê |
 | addDailyQC | qcFileId, qcDate, warehouse, qcStaff |
 | saveDailyQCItem | dailyQcId, itemCode, passRate, failRate, remarks |
 | saveContainerItem | qcFileId, photoNo, passRate, failRate, remarks |
 | uploadPhoto | qcFileId, dataUrl, targetType, (dailyQcId+itemCode \| photoNo) |
 | exportPDF | qcFileId, variant (`internal` mặc định \| `en` bản khách hàng) |
+
+### Đồng bộ thông tin đơn sang hồ sơ QC (cờ `QC_ORDER_FIELDS_READONLY`)
+
+Backend checklist đẩy thông tin đơn sang hồ sơ QC qua gRPC `SyncOrderInfo` (xem `docs/grpc-handover.md` mục 4c).
+Biến môi trường **`QC_ORDER_FIELDS_READONLY`** (mặc định **tắt**; bật bằng `true`/`1`/`yes`/`on`) quyết định
+`updateQCFile` có coi 9 ô do đơn sở hữu là chỉ-đọc hay không: tắt = hành vi cũ cho mọi hồ sơ; bật = hồ sơ có
+`order_id` bị bỏ các ô đó khỏi payload (hồ sơ tạo tay không đổi). Chỉ bật **sau khi đợt đồng bộ đầu đã chạy xong**.
+
+**Hồ sơ đã khóa (Hoàn tất QC) vẫn nhận 9 ô thuộc đơn** (owner chốt 2026-10-06): luồng đơn là tuần tự — QC xong rồi
+Logistics mới nhập số container / seal / ngày đóng cont — nên `SyncOrderInfo` ghi 9 ô đó ở mọi trạng thái, và chỉ
+9 cột đó (không đổi `qc_done_at` / kết luận QC). Khóa vẫn chặn HTTP `updateQCFile` và mọi ô do QC sở hữu.
+Response gRPC luôn kèm `writes_when_locked = true` khi có hồ sơ — cầu chì để checklist nhận ra bản App QC cũ (thấy khóa
+thì không ghi) và không lưu dấu "đã đồng bộ" nhầm; đừng bỏ cờ này. Mỗi lần ghi vào hồ sơ khóa, log ghi TÊN cột (không ghi giá trị).
