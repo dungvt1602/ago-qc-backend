@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { config } from '../config/env.js';
 import * as repo from '../repositories/qcFiles.repo.js';
 import { InvalidOrderInfoError } from '../lib/orderSync.js';
+import { exportPDF } from '../services/pdf.service.js';
 import { findOrCreateForOrder, getQCFile, syncOrderInfo as syncOrderInfoToFile } from '../services/qcFiles.service.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -121,6 +122,16 @@ async function syncOrderInfo(orderId, r) {
   return { ...res, writesWhenLocked: res.fileFound };
 }
 
+// Xuất PDF bản tiếng Việt (nội bộ) của hồ sơ và trả link (PLAN-0044: checklist gửi link này cho Sale phụ trách).
+// Chưa có hồ sơ cho đơn -> file_found=false (không phải lỗi). Dựng PDF đi qua hàng đợi tuần tự của renderPdf nên
+// nhiều đơn cùng lúc không làm tràn RAM; lỗi dựng thành INTERNAL để checklist thử lại.
+async function exportPdf(orderId) {
+  const id = await repo.findIdByOrderId(orderId);
+  if (!id) return { fileFound: false, pdfUrl: '' };
+  const data = await exportPDF(id, 'internal');
+  return { fileFound: true, pdfUrl: data.qcFile.PDF_URL || '' };
+}
+
 // Bật server. Trả về server (để tắt gọn khi shutdown) hoặc null nếu chưa cấu hình khóa.
 // opts cho phép test ghi đè cổng/khóa mà không đụng biến môi trường.
 export function startGrpc(opts = {}) {
@@ -136,6 +147,7 @@ export function startGrpc(opts = {}) {
     GetStatus: rpc('GetStatus', apiKey, getStatus),
     CreateQC: rpc('CreateQC', apiKey, createQC),
     SyncOrderInfo: rpc('SyncOrderInfo', apiKey, syncOrderInfo),
+    ExportPDF: rpc('ExportPDF', apiKey, exportPdf),
   });
 
   return new Promise((resolve, reject) => {
