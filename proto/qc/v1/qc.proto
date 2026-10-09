@@ -92,4 +92,5 @@ message ExportPDFRequest {
 message ExportPDFResponse {
   bool   file_found = 1; // false: chưa có hồ sơ cho order_id này (không phải lỗi)
   string pdf_url    = 2; // link PDF công khai; "" khi file_found = false
+  string qc_staff   = 3; // nhân viên QC của hồ sơ (ô "QC Inspector"), "" nếu chưa nhập — checklist ghi vào tin Zalo
 }
