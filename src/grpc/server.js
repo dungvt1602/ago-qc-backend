@@ -127,9 +127,9 @@ async function syncOrderInfo(orderId, r) {
 // nhiều đơn cùng lúc không làm tràn RAM; lỗi dựng thành INTERNAL để checklist thử lại.
 async function exportPdf(orderId) {
   const id = await repo.findIdByOrderId(orderId);
-  if (!id) return { fileFound: false, pdfUrl: '' };
+  if (!id) return { fileFound: false, pdfUrl: '', qcStaff: '' };
   const data = await exportPDF(id, 'internal');
-  return { fileFound: true, pdfUrl: data.qcFile.PDF_URL || '' };
+  return { fileFound: true, pdfUrl: data.qcFile.PDF_URL || '', qcStaff: data.qcFile.QC_STAFF || data.qcFile.QC_DONE_BY || '' };
 }
 
 // Bật server. Trả về server (để tắt gọn khi shutdown) hoặc null nếu chưa cấu hình khóa.
