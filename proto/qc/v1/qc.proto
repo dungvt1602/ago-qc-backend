@@ -18,6 +18,11 @@ service QCService {
   // Checklist đẩy thông tin đơn sang hồ sơ QC ĐÃ CÓ (một chiều). Trường chuỗi RỖNG = "đơn chưa có thông tin" → App QC KHÔNG ghi đè.
   // 9 ô thuộc đơn LUÔN được ghi, kể cả khi hồ sơ đã khoá (Hoàn tất QC): luồng đơn tuần tự nên số cont / seal / ngày đóng cont tới SAU khi QC xong.
   rpc SyncOrderInfo(SyncOrderInfoRequest) returns (SyncOrderInfoResponse);
+
+  // Xuất PDF hồ sơ QC bản tiếng Việt (nội bộ) của đơn và trả link (PLAN-0044).
+  // Checklist gọi từ job nền SAU khi QC và đơn đã đồng bộ, để gửi link cho Sale
+  // phụ trách. Idempotent: xuất lại ghi đè cùng file.
+  rpc ExportPDF(ExportPDFRequest) returns (ExportPDFResponse);
 }
 
 message GetStatusRequest {
@@ -79,4 +84,12 @@ message SyncOrderInfoResponse {
   bool locked             = 2;  // true: hồ sơ đang khoá (QC đã Hoàn tất) — CHỈ để báo; 9 ô thuộc đơn VẪN được ghi như hồ sơ đang mở
   bool updated            = 3;  // true: có ít nhất một ô đổi giá trị thật (đã ghi, kể cả hồ sơ khoá)
   bool writes_when_locked = 4;  // true: App QC bản ghi cả hồ sơ khoá — bản mới LUÔN đặt true khi file_found. Bản cũ không có trường này (vắng = false): thấy locked mà không có cờ này thì checklist coi là App QC cũ (chưa ghi) và KHÔNG lưu hash
+}
+
+message ExportPDFRequest {
+  int64 order_id = 1; // bắt buộc, > 0
+}
+message ExportPDFResponse {
+  bool   file_found = 1; // false: chưa có hồ sơ cho order_id này (không phải lỗi)
+  string pdf_url    = 2; // link PDF công khai; "" khi file_found = false
 }
