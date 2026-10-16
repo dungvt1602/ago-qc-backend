@@ -257,7 +257,9 @@ của RPC này: xem `proto/qc/v1/qc.proto` (nguồn sự thật; bản chép ở
 | `variant` (2, **mới — PLAN-0049**) | `""` hoặc `"internal"` = bản **nội bộ** song ngữ (hành vi cũ, mặc định). `"en"` = bản **khách hàng** tiếng Anh. Giá trị khác (kể cả `"EN"`, `"vi"`) -> `INVALID_ARGUMENT` — không âm thầm rơi về bản nội bộ, vì file nội bộ không được lọt ra cho khách. Kiểm variant **trước** khi tra DB. |
 
 Response: `pdf_url` là link của **đúng bản vừa xuất** (cột `pdf_url` cho bản nội bộ, `pdf_url_en` cho bản `en`); `qc_staff` là
-nhân viên QC của hồ sơ. Xuất lại ghi đè cùng file (idempotent). Hai bản nằm hai file riêng nên xin bản này không đụng bản kia.
+nhân viên QC của hồ sơ; `variant` (trường 4) là bản App QC **thực sự** đã xuất (`"internal"` hoặc `"en"`, echo từ chính tham số đưa vào hàm dựng PDF, kể cả khi `file_found=false`).
+Checklist đối chiếu echo này với bản đã xin và **không gửi link cho Sale nếu lệch hoặc rỗng** — App QC cũ không có trường 4 nên
+trả rỗng; đây là chốt chặn để file nội bộ không bị chuyển tiếp cho khách. **Đừng bỏ trường này hay đặt nó theo điều kiện khác.** Xuất lại ghi đè cùng file (idempotent). Hai bản nằm hai file riêng nên xin bản này không đụng bản kia.
 
 **Thứ tự deploy (bắt buộc): App QC TRƯỚC, checklist SAU.** proto3 bỏ qua trường lạ: App QC **cũ** nhận `variant="en"`
 mà không biết trường 2 thì vẫn xuất và trả bản **nội bộ**, không báo lỗi — nên nếu checklist lên trước, Sale sẽ nhận file

@@ -90,7 +90,7 @@ message SyncOrderInfoResponse {
 message ExportPDFRequest {
   int64  order_id = 1; // bắt buộc, > 0
   // Bản PDF cần xuất (PLAN-0049): ""/"internal" = bản nội bộ song ngữ (mặc định, hành vi cũ);
-  // "en" = bản KHÁCH HÀNG (tiếng Anh); giá trị khác -> INVALID_ARGUMENT.
+  // "en" = bản KHÁCH HÀNG (tiếng Anh); giá trị khác → INVALID_ARGUMENT.
   // App QC cũ (chưa có trường này) bỏ qua nó và luôn trả bản nội bộ — nên deploy App QC TRƯỚC checklist.
   string variant  = 2;
 }
@@ -98,4 +98,7 @@ message ExportPDFResponse {
   bool   file_found = 1; // false: chưa có hồ sơ cho order_id này (không phải lỗi)
   string pdf_url    = 2; // link PDF công khai của ĐÚNG bản vừa xuất (variant); "" khi file_found = false
   string qc_staff   = 3; // nhân viên QC của hồ sơ (ô "QC Inspector"), "" nếu chưa nhập — checklist ghi vào tin Zalo
+  // Bản PDF App QC THỰC SỰ đã xuất (PLAN-0049): "internal" hoặc "en" — echo lại để checklist đối chiếu với bản đã xin.
+  // App QC CŨ không có trường này nên trả "" → checklist coi là lệch và KHÔNG gửi link cho Sale (link đó là bản nội bộ).
+  string variant    = 4;
 }

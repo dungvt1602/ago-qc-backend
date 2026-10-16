@@ -128,6 +128,9 @@ async function syncOrderInfo(orderId, r) {
 // trường này nên luôn rơi vào đây), "en" = bản KHÁCH HÀNG tiếng Anh; giá trị khác -> INVALID_ARGUMENT. Kiểm variant
 // TRƯỚC khi tra DB: gõ sai thì báo lỗi ngay cả khi đơn chưa có hồ sơ. Mỗi bản có cột link riêng (pdf_url / pdf_url_en)
 // nên link trả về phải lấy ĐÚNG cột của bản vừa xuất — lấy nhầm cột là gửi file nội bộ cho người muốn file khách.
+// Response echo lại `variant` đã THỰC SỰ xuất (trường 4): checklist đối chiếu với bản đã xin, và coi echo rỗng (App QC cũ
+// không có trường này, bỏ qua variant, trả bản nội bộ) là lệch → không gửi link cho Sale. Echo lấy từ variant đã chuẩn hoá
+// đưa vào render, không lấy từ chỗ khác — để nó không thể nói khác với bản vừa dựng.
 // Chưa có hồ sơ cho đơn -> file_found=false (không phải lỗi). Dựng PDF đi qua hàng đợi tuần tự của renderPdf nên
 // nhiều đơn cùng lúc không làm tràn RAM; lỗi dựng thành INTERNAL để checklist thử lại.
 // deps chỉ để test thay DB/dựng PDF bằng giả; chạy thật dùng mặc định.
@@ -135,10 +138,10 @@ export function createExportPdf({ findIdByOrderId = repo.findIdByOrderId, render
   return async function exportPdf(orderId, r = {}) {
     const variant = normalizePdfVariant(r.variant);
     const id = await findIdByOrderId(orderId);
-    if (!id) return { fileFound: false, pdfUrl: '', qcStaff: '' };
+    if (!id) return { fileFound: false, pdfUrl: '', qcStaff: '', variant };
     const data = await render(id, variant);
     const url = variant === 'en' ? data.qcFile.PDF_URL_EN : data.qcFile.PDF_URL;
-    return { fileFound: true, pdfUrl: url || '', qcStaff: data.qcFile.QC_STAFF || data.qcFile.QC_DONE_BY || '' };
+    return { fileFound: true, pdfUrl: url || '', qcStaff: data.qcFile.QC_STAFF || data.qcFile.QC_DONE_BY || '', variant };
   };
 }
 const exportPdf = createExportPdf();

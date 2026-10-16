@@ -80,7 +80,7 @@ describe('gRPC ExportPDF.variant (server thật, DB + dựng PDF giả)', () => 
     render.mock.resetCalls();
     const { err, res } = await call({ orderId: 7 });
     assert.equal(err, null);
-    assert.deepEqual({ ...res }, { fileFound: true, pdfUrl: 'https://x/vn.pdf', qcStaff: 'Thái' });
+    assert.deepEqual({ ...res }, { fileFound: true, pdfUrl: 'https://x/vn.pdf', qcStaff: 'Thái', variant: 'internal' });
     assert.deepEqual(render.mock.calls.at(-1).arguments, ['file-7', 'internal']);
   });
 
@@ -90,6 +90,7 @@ describe('gRPC ExportPDF.variant (server thật, DB + dựng PDF giả)', () => 
       const { err, res } = await call({ orderId: 7, variant });
       assert.equal(err, null);
       assert.equal(res.pdfUrl, 'https://x/vn.pdf');
+      assert.equal(res.variant, 'internal'); // echo bản đã xuất: "" được chuẩn hoá thành 'internal'
       assert.deepEqual(render.mock.calls.at(-1).arguments, ['file-7', 'internal']);
     }
   });
@@ -98,8 +99,18 @@ describe('gRPC ExportPDF.variant (server thật, DB + dựng PDF giả)', () => 
     render.mock.resetCalls();
     const { err, res } = await call({ orderId: 7, variant: 'en' });
     assert.equal(err, null);
-    assert.deepEqual({ ...res }, { fileFound: true, pdfUrl: 'https://x/en.pdf', qcStaff: 'Thái' });
+    assert.deepEqual({ ...res }, { fileFound: true, pdfUrl: 'https://x/en.pdf', qcStaff: 'Thái', variant: 'en' });
     assert.deepEqual(render.mock.calls.at(-1).arguments, ['file-7', 'en']);
+  });
+
+  it('echo variant luôn là bản đã THỰC SỰ dựng (đối chiếu với tham số đưa vào render), không phải chuỗi client gửi', async () => {
+    for (const [sent, rendered] of [[undefined, 'internal'], ['', 'internal'], ['internal', 'internal'], ['en', 'en']]) {
+      render.mock.resetCalls();
+      const { err, res } = await call({ orderId: 7, variant: sent });
+      assert.equal(err, null);
+      assert.equal(render.mock.calls.at(-1).arguments[1], rendered);
+      assert.equal(res.variant, rendered);
+    }
   });
 
   it('variant "en" mà hồ sơ chưa có link bản EN -> pdf_url rỗng, KHÔNG rơi về link bản nội bộ', async () => {
@@ -127,11 +138,11 @@ describe('gRPC ExportPDF.variant (server thật, DB + dựng PDF giả)', () => 
   });
 
   it('đơn chưa có hồ sơ -> file_found=false với cả hai bản, không dựng PDF', async () => {
-    for (const variant of ['', 'en']) {
+    for (const [variant, echo] of [['', 'internal'], ['en', 'en']]) {
       render.mock.resetCalls();
       const { err, res } = await call({ orderId: 404, variant });
       assert.equal(err, null);
-      assert.deepEqual({ ...res }, { fileFound: false, pdfUrl: '', qcStaff: '' });
+      assert.deepEqual({ ...res }, { fileFound: false, pdfUrl: '', qcStaff: '', variant: echo });
       assert.equal(render.mock.callCount(), 0);
     }
   });
