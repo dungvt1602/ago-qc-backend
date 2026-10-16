@@ -10,6 +10,7 @@ import { config } from '../config/env.js';
 import * as repo from '../repositories/qcFiles.repo.js';
 import { InvalidOrderInfoError } from '../lib/orderSync.js';
 import { exportPDF } from '../services/pdf.service.js';
+import { normalizePdfVariant } from '../lib/pdfVariant.js';
 import { findOrCreateForOrder, getQCFile, syncOrderInfo as syncOrderInfoToFile } from '../services/qcFiles.service.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -122,18 +123,31 @@ async function syncOrderInfo(orderId, r) {
   return { ...res, writesWhenLocked: res.fileFound };
 }
 
-// Xuất PDF bản tiếng Việt (nội bộ) của hồ sơ và trả link (PLAN-0044: checklist gửi link này cho Sale phụ trách).
+// Xuất PDF của hồ sơ và trả link (PLAN-0044: checklist gửi link này cho Sale phụ trách).
+// `variant` (trường 2 của ExportPDFRequest, PLAN-0049): ""/"internal" = bản nội bộ song ngữ như cũ (client cũ không gửi
+// trường này nên luôn rơi vào đây), "en" = bản KHÁCH HÀNG tiếng Anh; giá trị khác -> INVALID_ARGUMENT. Kiểm variant
+// TRƯỚC khi tra DB: gõ sai thì báo lỗi ngay cả khi đơn chưa có hồ sơ. Mỗi bản có cột link riêng (pdf_url / pdf_url_en)
+// nên link trả về phải lấy ĐÚNG cột của bản vừa xuất — lấy nhầm cột là gửi file nội bộ cho người muốn file khách.
+// Response echo lại `variant` đã THỰC SỰ xuất (trường 4): checklist đối chiếu với bản đã xin, và coi echo rỗng (App QC cũ
+// không có trường này, bỏ qua variant, trả bản nội bộ) là lệch → không gửi link cho Sale. Echo lấy từ variant đã chuẩn hoá
+// đưa vào render, không lấy từ chỗ khác — để nó không thể nói khác với bản vừa dựng.
 // Chưa có hồ sơ cho đơn -> file_found=false (không phải lỗi). Dựng PDF đi qua hàng đợi tuần tự của renderPdf nên
 // nhiều đơn cùng lúc không làm tràn RAM; lỗi dựng thành INTERNAL để checklist thử lại.
-async function exportPdf(orderId) {
-  const id = await repo.findIdByOrderId(orderId);
-  if (!id) return { fileFound: false, pdfUrl: '', qcStaff: '' };
-  const data = await exportPDF(id, 'internal');
-  return { fileFound: true, pdfUrl: data.qcFile.PDF_URL || '', qcStaff: data.qcFile.QC_STAFF || data.qcFile.QC_DONE_BY || '' };
+// deps chỉ để test thay DB/dựng PDF bằng giả; chạy thật dùng mặc định.
+export function createExportPdf({ findIdByOrderId = repo.findIdByOrderId, render = exportPDF } = {}) {
+  return async function exportPdf(orderId, r = {}) {
+    const variant = normalizePdfVariant(r.variant);
+    const id = await findIdByOrderId(orderId);
+    if (!id) return { fileFound: false, pdfUrl: '', qcStaff: '', variant };
+    const data = await render(id, variant);
+    const url = variant === 'en' ? data.qcFile.PDF_URL_EN : data.qcFile.PDF_URL;
+    return { fileFound: true, pdfUrl: url || '', qcStaff: data.qcFile.QC_STAFF || data.qcFile.QC_DONE_BY || '', variant };
+  };
 }
+const exportPdf = createExportPdf();
 
 // Bật server. Trả về server (để tắt gọn khi shutdown) hoặc null nếu chưa cấu hình khóa.
-// opts cho phép test ghi đè cổng/khóa mà không đụng biến môi trường.
+// opts cho phép test ghi đè cổng/khóa mà không đụng biến môi trường (và opts.exportPdfDeps để thay DB/dựng PDF của ExportPDF).
 export function startGrpc(opts = {}) {
   const apiKey = opts.apiKey ?? config.qcAppApiKey;
   const port = opts.port ?? config.grpcPort;
@@ -147,7 +161,7 @@ export function startGrpc(opts = {}) {
     GetStatus: rpc('GetStatus', apiKey, getStatus),
     CreateQC: rpc('CreateQC', apiKey, createQC),
     SyncOrderInfo: rpc('SyncOrderInfo', apiKey, syncOrderInfo),
-    ExportPDF: rpc('ExportPDF', apiKey, exportPdf),
+    ExportPDF: rpc('ExportPDF', apiKey, opts.exportPdfDeps ? createExportPdf(opts.exportPdfDeps) : exportPdf),
   });
 
   return new Promise((resolve, reject) => {
