@@ -158,7 +158,7 @@ POST `/api` với body `{ action, payload }`, trả về `{ ok, result }`.
 | saveDailyQCItem | dailyQcId, itemCode, passRate, failRate, remarks |
 | saveContainerItem | qcFileId, photoNo, passRate, failRate, remarks |
 | uploadPhoto | qcFileId, dataUrl, targetType, (dailyQcId+itemCode \| photoNo) |
-| exportPDF | qcFileId, variant (`internal` mặc định \| `en` bản khách hàng) |
+| exportPDF | qcFileId, variant (`internal` mặc định \| `en` bản khách hàng). gRPC `ExportPDF` cũng nhận `variant` (trường 2; `""`/`internal`/`en`, giá trị khác -> `INVALID_ARGUMENT`) — xem `docs/grpc-handover.md` mục 4d |
 
 ### Đồng bộ thông tin đơn sang hồ sơ QC (cờ `QC_ORDER_FIELDS_READONLY`)
 

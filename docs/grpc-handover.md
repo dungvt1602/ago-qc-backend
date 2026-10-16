@@ -246,6 +246,32 @@ grpcurl -plaintext -proto proto/qc/v1/qc.proto \
 
 ---
 
+## 4d. `ExportPDF` — xuất PDF của hồ sơ, chọn bản bằng `variant` (PLAN-0044, PLAN-0049)
+
+Checklist gọi từ job nền (SAU khi QC xong và đơn đã đồng bộ) để lấy **link PDF** gửi cho Sale phụ trách. Proto đầy đủ
+của RPC này: xem `proto/qc/v1/qc.proto` (nguồn sự thật; bản chép ở mục 2 chưa có `ExportPDF`).
+
+| Trường request | Ý nghĩa |
+|---|---|
+| `order_id` (1) | Bắt buộc, > 0. Chưa có hồ sơ cho đơn -> `file_found=false`, `pdf_url=""` (không phải lỗi). |
+| `variant` (2, **mới — PLAN-0049**) | `""` hoặc `"internal"` = bản **nội bộ** song ngữ (hành vi cũ, mặc định). `"en"` = bản **khách hàng** tiếng Anh. Giá trị khác (kể cả `"EN"`, `"vi"`) -> `INVALID_ARGUMENT` — không âm thầm rơi về bản nội bộ, vì file nội bộ không được lọt ra cho khách. Kiểm variant **trước** khi tra DB. |
+
+Response: `pdf_url` là link của **đúng bản vừa xuất** (cột `pdf_url` cho bản nội bộ, `pdf_url_en` cho bản `en`); `qc_staff` là
+nhân viên QC của hồ sơ. Xuất lại ghi đè cùng file (idempotent). Hai bản nằm hai file riêng nên xin bản này không đụng bản kia.
+
+**Thứ tự deploy (bắt buộc): App QC TRƯỚC, checklist SAU.** proto3 bỏ qua trường lạ: App QC **cũ** nhận `variant="en"`
+mà không biết trường 2 thì vẫn xuất và trả bản **nội bộ**, không báo lỗi — nên nếu checklist lên trước, Sale sẽ nhận file
+nội bộ trong tin "đã đóng hàng" mà không ai hay.
+
+```bash
+grpcurl -plaintext -proto proto/qc/v1/qc.proto \
+  -H "x-api-key: $QC_APP_API_KEY" \
+  -d '{"order_id": 2, "variant": "en"}' \
+  ago-qc-backend:50051 ago.qc.v1.QCService/ExportPDF
+```
+
+---
+
 ## 5. Gọi từ Go (mẫu)
 
 ```go
